@@ -244,3 +244,7 @@ u32 max_u32(u32 a, u32 b) {
 f32 max_f32(f32 a, f32 b) {
     return a > b ? a : b;
 }
+
+v4 get_v4_from_v3(v3 v, f32 last_element) {
+    return get_v4(v.e[0], v.e[1], v.e[2], last_element);
+}

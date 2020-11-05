@@ -115,11 +115,9 @@ static Camera create_camera(v3 pos, v3 target, float aspect) {
     };
 }
 
-#if 0
-typedef struct __attribute__((packed)) Vertex  {}
-#else 
-typedef struct Vertex {
-#endif
+//NOTE: packing gives an improvement of 2x ?!
+typedef struct __attribute__((packed)) Vertex  {
+    //typedef struct Vertex {
     v3 pos;
     v2 uv;
     v2 normal;
@@ -154,21 +152,6 @@ typedef struct Scene {
     Camera camera;
 } Scene;
 
-
-typedef struct Rasterization_data {
-#if 0
-    u32 *x_array;
-    u32 *y_array;
-    u32 *z_array;
-    u32 *u_array;
-    u32 *v_array;
-#else
-    u32 num_vertices;
-    v4 *vertex_array;
-    v2 *uv_array;
-#endif
-} Rasterization_data;
-
 static Scene create_scene(u32 width, u32 height) {
     Scene scene = {0};
     scene.camera = create_camera(get_v3(0.0f, 0.0f, 1.5f), get_v3(0, 0, 0), (float)width / height);
@@ -178,9 +161,35 @@ static Scene create_scene(u32 width, u32 height) {
 
 typedef struct Vertex_shader_data {
     //v3 pos;
-    
     m4 mvp;
 } Vertex_shader_data;
+
+typedef struct Pipeline_input {
+    enum { vertex_processing_input, rasterization_input } input_type;
+    u32 num_vertices;
+    v4 *positions;
+    v2 *uvs;
+    v2 *normals;
+} Pipeline_input;
+
+Pipeline_input get_pipeline_input(int num_vertices, Vertex *vertices) {
+    v4 *positions = (v4 *)allocate_perm(g_allocator, num_vertices * sizeof(v4));
+    v2 *uvs = (v2 *)allocate_perm(g_allocator, num_vertices * sizeof(v2));
+    v2 *normals = (v2 *)allocate_perm(g_allocator, num_vertices * sizeof(v2));
+    for (int i = 0; i < num_vertices; ++i) {
+        positions[i] = get_v4_from_v3(vertices[i].pos, 1.0f);
+        uvs[i] = vertices[i].uv;
+        normals[i] = vertices[i].normal;
+    }
+    
+    Pipeline_input pipeline_input = {0};
+    pipeline_input.positions = positions;
+    pipeline_input.uvs = uvs;
+    pipeline_input.normals = normals;
+    pipeline_input.num_vertices = num_vertices;
+    
+    return pipeline_input;
+}
 
 void vertex_shader_function(int index, void *array, void *data) {
     //TODO: investigate alternatives for void *
@@ -190,9 +199,22 @@ void vertex_shader_function(int index, void *array, void *data) {
     *vertex = mul_m4_by_v4(vertex_shader_data->mvp, *vertex);
 }
 
-static void process_vertices(Worker *main_worker, Allocator *allocator, const Scene *scene,  v4 *vertex_positions, v2 *vertex_uvs,
-                             u32 vertices_num,  Rasterization_data *out_rasterization_data,
-                             u32 viewport_width, u32 viewport_height) {
+Vertex *convert_positions_and_uvs_to_vertices(float *float_vertices, u32 num_vertices) {
+    Vertex *vertices = (Vertex *)allocate_frame(g_allocator, sizeof(Vertex) * num_vertices);
+    for(int i = 0; i < num_vertices; i += 5) {
+        Vertex vertex;
+        vertex.pos = get_v3(float_vertices[i + 0], float_vertices[i + 1], float_vertices[i + 2]);
+        vertex.uv = get_v2(float_vertices[i + 3], float_vertices[i + 4]);
+        vertex.normal = get_v2(0, 0);
+    }
+    
+    return vertices;
+}
+
+static void process_vertices(Worker *main_worker, Allocator *allocator, Pipeline_input *pipeline_input, const Scene *scene, u32 viewport_width, u32 viewport_height) {
+    v4 *vertex_positions = pipeline_input->positions;
+    v2 *vertex_uvs = pipeline_input->uvs;
+    u32 vertices_num = pipeline_input->num_vertices;
     
     m4 model_matrix = get_m4_identity();
     m4 view_matrix = get_m4_look_at(scene->camera.pos, scene->camera.target, get_v3(0.0f, 1.0f, 0.0f));
@@ -227,10 +249,9 @@ static void process_vertices(Worker *main_worker, Allocator *allocator, const Sc
     
     //TODO: fix z coordinates !!!!
     //TODO: view frustrum culling
-    
-    out_rasterization_data->num_vertices = num_clipped_vertices;
-    out_rasterization_data->vertex_array = vertex_positions;
-    out_rasterization_data->uv_array = vertex_uvs;
+    pipeline_input->num_vertices = num_clipped_vertices;
+    pipeline_input->positions = vertex_positions;
+    pipeline_input->uvs = vertex_uvs;
 }
 
 typedef struct Triangle {
@@ -248,24 +269,30 @@ typedef struct Binner_data {
     int num_bins_in_row, num_bins_in_column;
     int tile_width, tile_height;
     Bin *bins;
+    Mutex mutex;
 } Binner_data;
 
 static void bin_triangles(int index, void *array, void *data) {
-    //TODO: this code might be completely wrong
+    //TODO: remove lock
+    //use bounding box!!! this code is wrong!!!
     //bin * num_triangles or simply num_triangles?
     Triangle *triangles = (Triangle *)array;
-    Binner_data *bin_triangle_data = (Binner_data *)data;
-    Bin *bins = bin_triangle_data->bins;
+    Binner_data *binner_data = (Binner_data *)data;
+    Bin *bins = binner_data->bins;
     int triangle_index = index;
-    
+    Mutex *mutex = &binner_data->mutex;
     //TODO: use the abrash algorithm
     Triangle triangle = triangles[triangle_index];
     for (int vertex_index = 0; vertex_index < 3; ++vertex_index) {
-        int tile_x = (int)(triangle.vertices[vertex_index].x / bin_triangle_data->tile_width);
-        int tile_y = (int)(triangle.vertices[vertex_index].y / bin_triangle_data->tile_height);
-        Bin *bin = &bins[tile_y * bin_triangle_data->num_bins_in_row + tile_x];
-        bin->triangles[bin->num_triangles] = triangle;
-        bin->num_triangles++;
+        int tile_x = (int)(triangle.vertices[vertex_index].x / binner_data->tile_width);
+        int tile_y = (int)(triangle.vertices[vertex_index].y / binner_data->tile_height);
+        Bin *bin = &bins[tile_y * binner_data->num_bins_in_row + tile_x];
+        lock_mutex(mutex);
+        {
+            bin->triangles[bin->num_triangles] = triangle;
+            bin->num_triangles++;
+        }
+        unlock_mutex(mutex);
     }
 }
 
@@ -283,7 +310,7 @@ static void sort_bins(Bin *bins, int num_bins) {
 }
 
 typedef struct Bin_rasterization_data  {
-    //Rasterization_data *rasterization_data;
+    //Vertex_soa *rasterization_data;
     Texture *texture;
     Framebuffer *framebuffer;
     Binner_data *binner_data;
@@ -307,8 +334,8 @@ static void rasterize_bins(int index, void *array,  void *data) {
     assert(texture->channels == 3);
     
     u32 num_vertices = num_triangles * 3;
-    v4 *vertices = malloc(num_vertices * sizeof(v4));
-    v2 *uvs = malloc(num_vertices * sizeof(v2));
+    v4 *vertices = (v4 *)allocate_frame(g_allocator, num_vertices * sizeof(v4));
+    v2 *uvs = (v2 *)allocate_frame(g_allocator, num_vertices * sizeof(v2));
     for (int i = 0; i < num_triangles; ++i) {
         for (int j = 0; j < 3; ++j) {
             int index = i * 3 + j;
@@ -516,20 +543,20 @@ static void rasterize_bins(int index, void *array,  void *data) {
 
 #define MAX_NUM_TRIANGLES_PER_BIN 10
 
-static void rasterize(Worker *main_worker, Rasterization_data *rasterization_data, Texture *texture, Framebuffer *out_framebuffer) {
-    assert(rasterization_data->num_vertices != 0);
-    assert(rasterization_data->vertex_array);
-    assert(rasterization_data->uv_array);
+static void rasterize(Worker *main_worker, Pipeline_input *pipeline_input, Texture *texture, Framebuffer *out_framebuffer) {
+    assert(pipeline_input->num_vertices != 0);
+    assert(pipeline_input->positions);
+    assert(pipeline_input->uvs);
     
     //bin triangles
-    u32 num_triangles = rasterization_data->num_vertices / 3;
-    Triangle *triangles = malloc(sizeof(Triangle) * num_triangles);
+    u32 num_triangles = pipeline_input->num_vertices / 3;
+    Triangle *triangles = (Triangle *)allocate_frame(g_allocator, sizeof(Triangle) * num_triangles);
     for (int i = 0; i < num_triangles; ++i) {
         Triangle *triangle = triangles + i;
         for (int j = 0; j < 3; ++j) {
             int index = i * 3 + j;
-            triangle->vertices[index] = rasterization_data->vertex_array[index];
-            triangle->uvs[index] = rasterization_data->uv_array[index];
+            triangle->vertices[index] = pipeline_input->positions[index];
+            triangle->uvs[index] = pipeline_input->uvs[index];
         }
     }
     
@@ -538,13 +565,14 @@ static void rasterize(Worker *main_worker, Rasterization_data *rasterization_dat
     u32 tile_width = out_framebuffer->width / num_bins_in_row;
     u32 tile_height = out_framebuffer->height / num_bins_in_column;
     int num_bins = num_bins_in_row * num_bins_in_column;
-    Bin *bins = calloc(num_bins, sizeof(Bin));
+    Bin *bins = (Bin *)allocate_frame(g_allocator, num_bins *  sizeof(Bin));
     for (int i = 0; i < num_bins; ++i) {
         bins[i].begin_x = i * tile_width;
         bins[i].end_x = (i + 1) * tile_width;
         bins[i].begin_y = i * tile_height;
         bins[i].end_y =  (i + 1) * tile_height;
-        bins[i].triangles = malloc(sizeof(Triangle) * MAX_NUM_TRIANGLES_PER_BIN);
+        bins[i].triangles = (Triangle *)allocate_frame(g_allocator, sizeof(Triangle) * MAX_NUM_TRIANGLES_PER_BIN);
+        bins[i].num_triangles = 0;
     }
     
     Binner_data binner_data = {

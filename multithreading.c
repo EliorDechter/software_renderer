@@ -76,6 +76,18 @@ typedef struct Parallel_for_data {
     void *data;
 } Parallel_for_data;
 
+typedef struct Mutex {
+    volatile int value;
+} Mutex;
+
+void lock_mutex(Mutex *mutex) {
+    while (compare_and_swap_bool(&mutex->value, 0, 1));
+}
+
+void unlock_mutex(Mutex *mutex) {
+    mutex->value = 0;
+}
+
 int g_job_count = 0; //TODO: consider removing this
 
 void add_continuation(Job *ancestor, Job continuation) {

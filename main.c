@@ -230,25 +230,7 @@ static double get_time() {
 
 FILE *g_output_file;
 
-#define MAX_NUM_ATTRIBUTES 10
-typedef struct Pipeline_input {
-    enum { vertex_processing_input, rasterization_input } input_type;
-    int num_attributes;
-    int attribute_size[10];
-    int offset[10];
-    void *vertex_buffer;
-} Pipeline_input;
-
 int main() {
-#if 0
-    Pipeline_input pipeline_input = {0};
-    pipeline_input.num_vertices = model.num_vertices;
-    pipeline_input.attribute_size[0] = sizeof(v3);
-    pipeline_input.attribute_size[1] = sizeof(v2);
-    pipeline_input.offset = {0};
-    vertex_buffer = model.vertex_buffer;
-#endif
-    
     g_output_file = fopen("output_file", "w");
     
     const char *const WINDOW_TITLE = "Viewer";
@@ -268,9 +250,6 @@ int main() {
     assert(memory);
     Allocator allocator = create_allocator(memory, perm_memory_size, frame_memory_size);
     g_allocator = &allocator;
-    
-    Model model = load_model_from_obj();
-    
     
     Display *display = XOpenDisplay(NULL);
     assert(display != NULL);
@@ -350,14 +329,16 @@ int main() {
     float average_fps = 0;
     u32 average_fps_counter = 0;
     
-    
     Worker_group worker_group;
     Worker *main_worker;
-    bool run_single_threaded = false;
+    bool run_single_threaded = true;
     init_multithreading(&allocator, run_single_threaded, &worker_group, &main_worker);
     
     bool should_process_vertices = true;
     int num_vertices = 3;
+    
+    Model model = load_model_from_obj();
+    Pipeline_input pipeline_input = get_pipeline_input(model.num_vertices, model.vertices);
     
     
 #if 0
@@ -384,10 +365,18 @@ int main() {
         color_index += stride;
         uv_index += stride;
     }
-#else
-    
 #endif
-    
+    float float_temp_vertices[] = {
+        511, 0, 15,    1, 0,
+        0, 0, 15,      0, 0,
+        0, 511, 15,    0, 1,
+        
+        0, 511, 15,    0, 1,
+        511, 511, 15,  1, 1,
+        511, 0, 15,    1, 0
+    };
+    Vertex *temp_vertices = convert_positions_and_uvs_to_vertices(float_temp_vertices, 6);
+    Pipeline_input temp_pipeline_input  = get_pipeline_input(6 , temp_vertices);
     
     while(!g_window_should_close) {
         //for (int i = 0; i < 1; ++i) {
@@ -396,32 +385,33 @@ int main() {
         //stuff
         
         //tickfunc
+#if 0
+        Vertex_soa vertex_soa = {0};
+        vertex_soa.vertex_array = (v4 *)allocate_frame(&allocator, num_vertices * sizeof(v4));
+        vertex_soa.vertex_array[0] = (v4){511, 0, 15, 1};
+        vertex_soa.vertex_array[1] = (v4){0, 0, 15, 1};
+        vertex_soa.vertex_array[2] = (v4){0, 511, 15, 1};
+        vertex_soa.vertex_array[3] = (v4){0, 511, 15, 1};
+        vertex_soa.vertex_array[4] = (v4){511, 511, 15, 1};
+        vertex_soa.vertex_array[5] = (v4){511, 0, 15, 1};
         
-        Rasterization_data rasterization_data = {0};
-        rasterization_data.vertex_array = (v4 *)allocate_frame(&allocator, num_vertices * sizeof(v4));
-        rasterization_data.vertex_array[0] = (v4){511, 0, 15, 1};
-        rasterization_data.vertex_array[1] = (v4){0, 0, 15, 1};
-        rasterization_data.vertex_array[2] = (v4){0, 511, 15, 1};
-        rasterization_data.vertex_array[3] = (v4){0, 511, 15, 1};
-        rasterization_data.vertex_array[4] = (v4){511, 511, 15, 1};
-        rasterization_data.vertex_array[5] = (v4){511, 0, 15, 1};
+        vertex_soa.uv_array = (v2 *)allocate_frame(&allocator, num_vertices * sizeof(v2));
+        vertex_soa.uv_array[0] = (v2){1 ,0};
+        vertex_soa.uv_array[1] = (v2){0 ,0};
+        vertex_soa.uv_array[2] = (v2){0, 1};
+        vertex_soa.uv_array[3] = (v2){0 ,1};
+        vertex_soa.uv_array[4] = (v2){1 ,1};
+        vertex_soa.uv_array[5] = (v2){1, 0};
         
-        rasterization_data.uv_array = (v2 *)allocate_frame(&allocator, num_vertices * sizeof(v2));
-        rasterization_data.uv_array[0] = (v2){1 ,0};
-        rasterization_data.uv_array[1] = (v2){0 ,0};
-        rasterization_data.uv_array[2] = (v2){0, 1};
-        rasterization_data.uv_array[3] = (v2){0 ,1};
-        rasterization_data.uv_array[4] = (v2){1 ,1};
-        rasterization_data.uv_array[5] = (v2){1, 0};
-        
-        rasterization_data.num_vertices = num_vertices;
+        vertex_soa.num_vertices = num_vertices;
+#endif
         
         if (should_process_vertices) {
             
-            //process_vertices(&model, main_worker, &allocator, &scene, input_data,  num_vertices, &rasterization_data, framebuffer.width, framebuffer.height);
+            //process_vertices(main_worker, &allocator, &pipeline_input, &scene, framebuffer.width, framebuffer.height);
         }
         
-        rasterize(main_worker, &rasterization_data, &texture, &framebuffer);
+        rasterize(main_worker, &temp_pipeline_input, &texture, &framebuffer);
         
         //printf("rasterizer: %lu\n", g_rasterizer_clock_cycles);
         
