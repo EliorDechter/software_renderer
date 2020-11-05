@@ -1,0 +1,22 @@
+[
+    {
+        "arguments": [
+            "clang",
+            "-c",
+            "-o3",
+            "-I.",
+            "-g",
+            "-Wpedantic",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-pedantic-errors",
+            "-Wconversion",
+            "-o",
+            "executable",
+            "renderer.c"
+        ],
+        "directory": "/home/wormboy/code_projects/software_renderer",
+        "file": "renderer.c"
+    }
+]
