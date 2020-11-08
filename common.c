@@ -3,6 +3,15 @@
 
 #include <stdint.h>
 #include <assert.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
+#include <math.h>
+
 typedef uint8_t u8;
 typedef uint16_t u16;
 typedef uint32_t u32;
@@ -26,9 +35,6 @@ typedef double f64;
 #define TO_RADIANS(degrees) ((PI / 180) * (degrees))
 #define TO_DEGREES(radians) ((180 / PI) * (radians))
 
-
-
-
 typedef struct Allocator {
     u8 *perm_memory_base;
     size_t perm_memory_used;
@@ -38,20 +44,13 @@ typedef struct Allocator {
     size_t frame_memory_used;
     size_t frame_memory_size;
     
+    u8 *memory;
 } Allocator;
-
 
 Allocator *g_allocator;
 
-
-Allocator create_allocator(u8 *memory_buffer, size_t perm_memory_size, size_t frame_memory_size) {
-    Allocator allocator = {0};
-    allocator.perm_memory_size = perm_memory_size;
-    allocator.frame_memory_size = frame_memory_size;
-    allocator.perm_memory_base = memory_buffer;
-    allocator.frame_memory_base = memory_buffer + perm_memory_size;
-    
-    return allocator;
+size_t convert_gibibytes_to_bytes(f32 size) {
+    return (size_t)(size * (f32)pow(1024, 3));
 }
 
 u8 *allocate_perm_aligned(Allocator *allocator, size_t allocation_size, u32 alignment) {
@@ -60,15 +59,15 @@ u8 *allocate_perm_aligned(Allocator *allocator, size_t allocation_size, u32 alig
     uintptr_t offset = 0;
     
     if ((uintptr_t)memory & alignment_mask) {
-        offset = (uintptr_t)memory - ((uintptr_t)memory & alignment_mask);
+        offset = (uintptr_t)alignment - ((uintptr_t)memory & alignment_mask);
     }
     
     allocation_size += offset;
     
     assert(allocation_size + allocator->perm_memory_used <= allocator->perm_memory_size);
-    memory += offset;
+    //memory += offset;
     allocator->perm_memory_used += allocation_size;
-    return memory;
+    return memory + offset;
 }
 
 u8 *allocate_frame_aligned(Allocator *allocator, size_t allocation_size, u32 alignment) {
@@ -77,15 +76,15 @@ u8 *allocate_frame_aligned(Allocator *allocator, size_t allocation_size, u32 ali
     uintptr_t offset = 0;
     
     if ((uintptr_t)memory & alignment_mask) {
-        offset = (uintptr_t)memory - ((uintptr_t)memory & alignment_mask);
+        offset = (uintptr_t)alignment - ((uintptr_t)memory & alignment_mask);
     }
     
     allocation_size += offset;
     
     assert(allocation_size + allocator->frame_memory_used <= allocator->frame_memory_size);
-    memory += offset;
+    //memory += offset;
     allocator->frame_memory_used += allocation_size;
-    return memory;
+    return memory + offset;
 }
 
 u8 *allocate_perm(Allocator *allocator, size_t allocation_size) {
@@ -124,4 +123,28 @@ u8 *allocate_frame(Allocator *allocator, size_t allocation_size) {
 void reset_frame_memory(Allocator *allocator) {
     allocator->frame_memory_used = 0;
 }
+
+Allocator *create_allocator(float perm_memory_size_in_gigabytes, float frame_memory_size_in_gigabytes) {
+    size_t perm_memory_size = convert_gibibytes_to_bytes(perm_memory_size_in_gigabytes);
+    size_t frame_memory_size =  convert_gibibytes_to_bytes(frame_memory_size_in_gigabytes);
+    u8 *memory = malloc(sizeof(Allocator) + perm_memory_size + frame_memory_size);
+    assert(memory);
+    Allocator *allocator = (Allocator *)memory;
+    allocator->perm_memory_size = perm_memory_size;
+    allocator->frame_memory_size = frame_memory_size;
+    allocator->perm_memory_base = memory + sizeof(Allocator);
+    allocator->frame_memory_base = memory + perm_memory_size + sizeof(Allocator);
+    allocator->frame_memory_used = 0;
+    allocator->perm_memory_used = 0;
+    allocator->memory = memory;
+    
+    g_allocator = allocator;
+    
+    return allocator;
+}
+
+void free_allocator(Allocator *allocator) {
+    free(allocator->memory);
+}
+
 #endif

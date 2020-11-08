@@ -4,6 +4,8 @@
 //-AA
 //-multithreading memory allocation
 //-make sure every thread has its own cahceline aligned memory
+//-texture filtering
+//-put a cap on number of jobs & finish with the multithreading code already
 
 #include <stdio.h>
 #include <assert.h>
@@ -63,10 +65,6 @@ typedef struct {
     void *userdata;
 #endif
 } window;
-
-size_t convert_gibibytes_to_bytes(f32 size) {
-    return (size_t)(size * (f32)pow(1024, 3));
-}
 
 static Image create_image(Allocator *allocator, u32 width, u32 height, u32 channels) {
     u32 num_elements = width * height * channels;
@@ -230,25 +228,7 @@ static double get_time() {
 
 FILE *g_output_file;
 
-#define MAX_NUM_ATTRIBUTES 10
-typedef struct Pipeline_input {
-    enum { vertex_processing_input, rasterization_input } input_type;
-    int num_attributes;
-    int attribute_size[10];
-    int offset[10];
-    void *vertex_buffer;
-} Pipeline_input;
-
 int main() {
-#if 0
-    Pipeline_input pipeline_input = {0};
-    pipeline_input.num_vertices = model.num_vertices;
-    pipeline_input.attribute_size[0] = sizeof(v3);
-    pipeline_input.attribute_size[1] = sizeof(v2);
-    pipeline_input.offset = {0};
-    vertex_buffer = model.vertex_buffer;
-#endif
-    
     g_output_file = fopen("output_file", "w");
     
     const char *const WINDOW_TITLE = "Viewer";
@@ -262,15 +242,7 @@ int main() {
 #endif
     
     //allocate memory
-    size_t perm_memory_size =  convert_gibibytes_to_bytes(0.1);
-    size_t frame_memory_size =  convert_gibibytes_to_bytes(0.1);
-    u8 *memory = malloc(perm_memory_size + frame_memory_size);
-    assert(memory);
-    Allocator allocator = create_allocator(memory, perm_memory_size, frame_memory_size);
-    g_allocator = &allocator;
-    
-    Model model = load_model_from_obj();
-    
+    Allocator *allocator = create_allocator(1, 1);
     
     Display *display = XOpenDisplay(NULL);
     assert(display != NULL);
@@ -319,7 +291,7 @@ int main() {
     Visual *visual = XDefaultVisual(display, screen);
     
     assert(depth == 24 || depth == 32);
-    Image surface = create_image(&allocator, SCREEN_WIDTH, SCREEN_HEIGHT, 4);
+    Image surface = create_image(allocator, SCREEN_WIDTH, SCREEN_HEIGHT, 4);
     XImage *ximage = XCreateImage(display, visual, depth, ZPixmap, 0,
                                   (char*)surface.buffer, SCREEN_WIDTH, SCREEN_HEIGHT, 32, 0);
     
@@ -332,7 +304,7 @@ int main() {
     
     //release scene
     Scene scene = create_scene(SCREEN_WIDTH, SCREEN_HEIGHT);
-    Framebuffer framebuffer = create_framebuffer(&allocator, SCREEN_WIDTH, SCREEN_HEIGHT);
+    Framebuffer framebuffer = create_framebuffer(allocator, SCREEN_WIDTH, SCREEN_HEIGHT);
     
     double lowest_fps = 1000.0f;
     double highest_fps = 0.0f;
@@ -342,23 +314,24 @@ int main() {
     double second_time = first_time;
     
 #if SAM_HYDE
-    Texture texture = load_texture(&allocator, "index.jpeg");
+    Texture texture = load_texture(allocator, "index.jpeg");
 #elif SMALL_SQUARE
-    Texture texture = load_texture(&allocator, "Untitled.png");
+    Texture texture = load_texture(allocator, "Untitled.png");
 #endif
     
     float average_fps = 0;
     u32 average_fps_counter = 0;
     
-    
     Worker_group worker_group;
     Worker *main_worker;
-    bool run_single_threaded = false;
-    init_multithreading(&allocator, run_single_threaded, &worker_group, &main_worker);
+    bool run_single_threaded = true;
+    init_multithreading(allocator, run_single_threaded, &worker_group, &main_worker);
     
-    bool should_process_vertices = true;
+    bool should_process_vertices = false;
     int num_vertices = 3;
     
+    Model model = load_model_from_obj();
+    Pipeline_data pipeline_data = get_pipeline_data(model.num_vertices, model.vertices);
     
 #if 0
     const int stride = 8;
@@ -384,44 +357,56 @@ int main() {
         color_index += stride;
         uv_index += stride;
     }
-#else
-    
 #endif
     
+    float float_temp_vertices[] = {
+        511, 0, 15,    1, 0,
+        0, 0, 15,      0, 0,
+        0, 511, 15,    0, 1,
+        
+        0, 511, 15,    0, 1,
+        511, 511, 15,  1, 1,
+        511, 0, 15,    1, 0
+    };
     
-    while(!g_window_should_close) {
-        //for (int i = 0; i < 1; ++i) {
+    //Vertex *temp_vertices = convert_positions_and_uvs_to_vertices(float_temp_vertices, 6);
+    //Pipeline_data temp_pipeline_data = get_pipeline_data(6 , temp_vertices);
+    
+    //while(!g_window_should_close) {
+    for (int i = 0; i < 1; ++i) {
         first_time = get_time();
         
         //stuff
         
         //tickfunc
+#if 0
+        Vertex_soa vertex_soa = {0};
+        vertex_soa.vertex_array = (v4 *)allocate_frame(allocator, num_vertices * sizeof(v4));
+        vertex_soa.vertex_array[0] = (v4){511, 0, 15, 1};
+        vertex_soa.vertex_array[1] = (v4){0, 0, 15, 1};
+        vertex_soa.vertex_array[2] = (v4){0, 511, 15, 1};
+        vertex_soa.vertex_array[3] = (v4){0, 511, 15, 1};
+        vertex_soa.vertex_array[4] = (v4){511, 511, 15, 1};
+        vertex_soa.vertex_array[5] = (v4){511, 0, 15, 1};
         
-        Rasterization_data rasterization_data = {0};
-        rasterization_data.vertex_array = (v4 *)allocate_frame(&allocator, num_vertices * sizeof(v4));
-        rasterization_data.vertex_array[0] = (v4){511, 0, 15, 1};
-        rasterization_data.vertex_array[1] = (v4){0, 0, 15, 1};
-        rasterization_data.vertex_array[2] = (v4){0, 511, 15, 1};
-        rasterization_data.vertex_array[3] = (v4){0, 511, 15, 1};
-        rasterization_data.vertex_array[4] = (v4){511, 511, 15, 1};
-        rasterization_data.vertex_array[5] = (v4){511, 0, 15, 1};
+        vertex_soa.uv_array = (v2 *)allocate_frame(allocator, num_vertices * sizeof(v2));
+        vertex_soa.uv_array[0] = (v2){1 ,0};
+        vertex_soa.uv_array[1] = (v2){0 ,0};
+        vertex_soa.uv_array[2] = (v2){0, 1};
+        vertex_soa.uv_array[3] = (v2){0 ,1};
+        vertex_soa.uv_array[4] = (v2){1 ,1};
+        vertex_soa.uv_array[5] = (v2){1, 0};
         
-        rasterization_data.uv_array = (v2 *)allocate_frame(&allocator, num_vertices * sizeof(v2));
-        rasterization_data.uv_array[0] = (v2){1 ,0};
-        rasterization_data.uv_array[1] = (v2){0 ,0};
-        rasterization_data.uv_array[2] = (v2){0, 1};
-        rasterization_data.uv_array[3] = (v2){0 ,1};
-        rasterization_data.uv_array[4] = (v2){1 ,1};
-        rasterization_data.uv_array[5] = (v2){1, 0};
+        vertex_soa.num_vertices = num_vertices;
+#endif
         
-        rasterization_data.num_vertices = num_vertices;
+        
         
         if (should_process_vertices) {
-            
-            //process_vertices(&model, main_worker, &allocator, &scene, input_data,  num_vertices, &rasterization_data, framebuffer.width, framebuffer.height);
+            process_vertices(main_worker, allocator, &pipeline_data, &scene, framebuffer.width, framebuffer.height);
         }
         
-        rasterize(main_worker, &rasterization_data, &texture, &framebuffer);
+        rasterize(main_worker, &pipeline_data, &texture, &framebuffer);
         
         //printf("rasterizer: %lu\n", g_rasterizer_clock_cycles);
         
@@ -455,7 +440,7 @@ int main() {
             average_fps_counter++;
         }
         
-        reset_frame_memory(&allocator);
+        reset_frame_memory(allocator);
     }
     
     deinit_multithreading(&worker_group);
@@ -465,6 +450,8 @@ int main() {
     assert(display != NULL);
     XCloseDisplay(display);
     display = NULL;
+    
+    free_allocator(allocator);
     
     return 0;
 }

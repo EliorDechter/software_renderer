@@ -156,11 +156,18 @@ Model load_model_from_obj() {
             vertex.uv.e[0] = attrib.texcoords[texcoord_index * 2  + 0];
             vertex.uv.e[1] = attrib.texcoords[texcoord_index * 2  + 1];
             
+            assert(vertex.uv.e[0] >= 0 && vertex.uv.e[1] >= 0);
+            
             vertex.normal.e[0] = attrib.normals[normal_index * 2 + 0];
             vertex.normal.e[1] = attrib.normals[normal_index * 2 + 1];
             
             model.vertices[model.num_vertices++] = vertex;
         }
+    }
+    
+    for (int i = 0; i < model.num_vertices; ++i) {
+        Vertex vertex = model.vertices[i];
+        assert(vertex.uv.u >= 0 && vertex.uv.v >= 0);
     }
     
     return model;

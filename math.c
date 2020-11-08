@@ -47,6 +47,7 @@ typedef union v2i {
 typedef union v2 {
     struct { float x, y; };
     struct { float u, v; };
+    struct { float c, r; };
     float e[2];
 } v2;
 
@@ -243,4 +244,39 @@ u32 max_u32(u32 a, u32 b) {
 
 f32 max_f32(f32 a, f32 b) {
     return a > b ? a : b;
+}
+
+v4 get_v4_from_v3(v3 v, f32 last_element) {
+    return get_v4(v.e[0], v.e[1], v.e[2], last_element);
+}
+
+typedef struct Bounding_box {
+    int x0, y0, x1, y1;
+} Bounding_box;
+
+Bounding_box get_2d_bounding_box_from_4_coords(int x0, int y0, int x1, int y1) {
+    Bounding_box bounding_box = {
+        .x0 = x0,
+        .y0 = y0, 
+        .x1 = x1,
+        .y1 = y1
+    };
+    
+    return bounding_box;
+}
+
+Bounding_box get_2d_bounding_box_from_3_v2(v2 a, v2 b, v2 c) {
+    Bounding_box bounding_box;
+    bounding_box.x0 = min_s32(min_s32(a.x, b.x), c.x);
+    bounding_box.y0 = min_s32(min_s32(a.y, b.y), c.y);
+    bounding_box.x1 = max_s32(max_s32(a.x, b.x), c.x);
+    bounding_box.y1 = min_s32(max_s32(a.y, b.y), c.y);
+    
+    return bounding_box;
+}
+
+bool check_aabb_collision(Bounding_box box0, Bounding_box box1) {
+    int width_sum = (box0.x1 - box0.x0) + (box1.x1  - box1.x0);
+    int height_sum = (box0.y1 - box0.y0) + (box1.y1  - box1.y0);
+    return (abs(box0.x0 - box1.x0) < width_sum) && (abs(box0.y0 - box1.y0) < height_sum);
 }

@@ -1,4 +1,6 @@
+#include "common.c"
 #include "multithreading.c"
+
 
 void fib(Worker *worker, Job *job) {
     assert(job);
@@ -27,14 +29,14 @@ void fib(Worker *worker, Job *job) {
     fprintf(stderr, "fib result: %d\n", job->result);
 }
 
-
 void test_multithreading_with_fib() {
+#if 0
     time_t t;
     srand(time(&t));
     
     pthread_t *threads;
     int num_threads;
-    Worker_group worker_group = create_worker_group(&threads, &num_threads);
+    Worker_group worker_group = create_job_group(&threads, &num_threads);
     
     Worker *worker = &worker_group.workers[0];
     Job_group *job_group = create_job_group();
@@ -50,23 +52,33 @@ void test_multithreading_with_fib() {
     for (int i = 0; i < num_threads; ++i) {
         pthread_join(threads[i], NULL);
     }
+#endif
 }
 
-void add_func(int begin_index, int end_index, void *array, void *data) {
-    for (int i = begin_index; i < end_index; ++i) {
-        ((int *)array)[i] += 5;
-    }
+void add_func(int index, void *array, void *data) {
+    ((int *)array)[index] += 5;
+    printf("%d\n", ((int *)array)[index]);
 }
 
 #define ARR_SIZE 16
 
 void test_parallel_for() {
+    Worker_group worker_group;
+    Worker *main_worker;
+    bool run_single_threaded = true;
+    Allocator *allocator = create_allocator(0.5, 0.5);
+    init_multithreading(allocator, run_single_threaded, &worker_group, &main_worker);
+    int array[100] = {0};
+    parallel_for(main_worker, 0, 100, 1, array, 100, NULL, add_func);
+    deinit_multithreading(&worker_group);
+    
+#if 0
     time_t t;
     srand(time(&t));
     
     pthread_t *threads;
     int num_threads;
-    Worker_group worker_group = create_worker_group(&threads, &num_threads);
+    Worker_group worker_group = create_job_group(&threads, &num_threads);
     
     Worker *worker = &worker_group.workers[0];
     const int grain_size = 4;
@@ -77,7 +89,7 @@ void test_parallel_for() {
     }
     printf("\n");
     destroy_worker_group(&worker_group);
-    
+#endif
 }
 
 int main() {

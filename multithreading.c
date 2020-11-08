@@ -21,12 +21,15 @@
 struct Job;
 struct Worker;
 
+#define JOB_ENTRY_POINT(function_name) void 
+
 typedef void (*Job_function)(struct Worker*, struct Job*);
 //typedef  void (*Parallel_for_function)(int begin_index, int end_index, void *array, void *data);
 typedef  void (*Parallel_for_function)(int index, void *array, void *data);
 
-#define MAX_JOB_NUM 4096
-#define JOBS_MASK 4095
+#define MAX_NUM_JOBS 800 //if the actual number of jobs exceeds this number that program will start hanging
+#define JOBS_MASK MAX_NUM_JOBS - 1
+#define MAX_NUM_CHILDREN 10
 
 typedef struct Job {
     Job_function function;
@@ -40,11 +43,14 @@ typedef struct Job {
     u32 continuation_count;
     struct Job *continuations;
     int id;
+    
+    int num_children;
+    struct Job *children[10];
 } Job;
 
 typedef struct Job_deque {
     volatile long top, bottom;
-    Job *job_array[MAX_JOB_NUM];
+    Job *job_array[MAX_NUM_JOBS];
 } Job_deque;
 
 typedef struct Worker {
@@ -56,7 +62,7 @@ typedef struct Worker {
 } Worker;
 
 typedef struct Job_group {
-    Job *jobs[MAX_JOB_NUM];
+    Job *jobs[MAX_NUM_JOBS];
     int job_count;
 } Job_group;
 
@@ -76,6 +82,18 @@ typedef struct Parallel_for_data {
     void *data;
 } Parallel_for_data;
 
+typedef struct Mutex {
+    volatile int value;
+} Mutex;
+
+void lock_mutex(Mutex *mutex) {
+    while (!compare_and_swap_bool(&mutex->value, 0, 1)) {};
+}
+
+void unlock_mutex(Mutex *mutex) {
+    mutex->value = 0;
+}
+
 int g_job_count = 0; //TODO: consider removing this
 
 void add_continuation(Job *ancestor, Job continuation) {
@@ -85,39 +103,41 @@ void add_continuation(Job *ancestor, Job continuation) {
 }
 
 Job *create_root_job(Job_group *job_group, Job_function function, void *data) {
-    Job *job = calloc(1, sizeof(Job));
-    
+    Job *job = (Job *)allocate_frame(g_allocator, sizeof(Job));
     job->function = function;
     job->parent = 0;
     job->unfinished_jobs = 1;
     job->data = data;
     job->jobs_to_delete_count = 0;
-    job->continuations = malloc(sizeof(Job) * MAX_JOB_NUM);
-    job->jobs_to_delete = malloc(sizeof(Job) * MAX_JOB_NUM);
-    //job->id = g_job_count++;
+    job->continuations = (Job *)allocate_frame(g_allocator, sizeof(Job) * MAX_NUM_CHILDREN);
+    job->jobs_to_delete = (Job *)allocate_frame(g_allocator, sizeof(Job) * MAX_NUM_CHILDREN);
+    job->id = g_job_count++;
     job->id = 0;
+    job->continuation_count = 0;
     
-    assert(job_group->job_count + 1 < MAX_JOB_NUM);
+    assert(job_group->job_count + 1 < MAX_NUM_JOBS);
     job_group->jobs[job_group->job_count++] = job;
     
     return job;
 }
 
-
 Job *create_child_job(Job_group *job_group, Job *parent, Job_function function, void *data) {
     fetch_and_add(&parent->unfinished_jobs, 1);
     
-    Job *job = calloc(1, sizeof(Job));
+    Job *job = (Job *)allocate_frame(g_allocator, sizeof(Job));
     job->function = function;
     job->parent = parent;
     job->unfinished_jobs = 1;
     job->data = data;
     job->jobs_to_delete_count = 0;
-    job->continuations = malloc(sizeof(Job) * MAX_JOB_NUM);
-    job->jobs_to_delete = malloc(sizeof(Job) * MAX_JOB_NUM);
-    //job->id = g_job_count++;
+    job->continuations = (Job *)allocate_frame(g_allocator, sizeof(Job) * MAX_NUM_CHILDREN);
+    job->jobs_to_delete = (Job *)allocate_frame(g_allocator, sizeof(Job) * MAX_NUM_CHILDREN);
+    job->id = g_job_count++;
+    job->continuation_count = 0;
     
-    assert(job_group->job_count + 1 < MAX_JOB_NUM);
+    //parent->children[parent->num_children++] = job; initalize!
+    
+    assert(job_group->job_count + 1 < MAX_NUM_JOBS);
     job_group->jobs[job_group->job_count++] = job;
     
     return job;
@@ -125,6 +145,7 @@ Job *create_child_job(Job_group *job_group, Job *parent, Job_function function, 
 
 bool push_to_deque(Job_deque *deque, Job *job) {
     long bottom = deque->bottom;
+    assert((bottom & JOBS_MASK) <= MAX_NUM_JOBS);
     deque->job_array[bottom & JOBS_MASK] = job;
     compiler_barrier;
     deque->bottom++;
@@ -135,6 +156,7 @@ Job *steal_from_deque(Job_deque *deque) {
     compiler_barrier;
     long bottom = deque->bottom;
     if (top < bottom) {
+        assert((top & JOBS_MASK) <= MAX_NUM_JOBS);
         Job *job = deque->job_array[top & JOBS_MASK];
         
         if (compare_and_swap_bool(&deque->top, top + 1, top)) {
@@ -284,7 +306,8 @@ Worker_group destroy_worker_group(Worker_group *worker_group) {
 }
 
 Job_group *create_job_group() {
-    Job_group *job_group = calloc(1, sizeof(Job_group));
+    Job_group *job_group = (Job_group *)allocate_frame(g_allocator, sizeof(Job_group));
+    memset(job_group, 0, sizeof(Job_group));
     return job_group;
 }
 
@@ -295,7 +318,7 @@ void wait_on_job_group(Worker *worker, Job_group *job_group) {
 }
 
 Parallel_for_data *create_parallel_for_data(int begin_index, int end_index, int grain_size, void *array, int array_count, void *data, Parallel_for_function function) {
-    Parallel_for_data *parallel_for_job_data = malloc(sizeof(Parallel_for_data));
+    Parallel_for_data *parallel_for_job_data = (Parallel_for_data *)allocate_frame(g_allocator, sizeof(Parallel_for_data));
     parallel_for_job_data->begin_index = begin_index;
     parallel_for_job_data->end_index = end_index;
     parallel_for_job_data->grain_size = grain_size;
@@ -330,12 +353,20 @@ void parallel_for_function(Worker *worker, Job *parent_job) {
     //wait_on_job_group(worker, job_group);
 }
 
+#define USE_DEQUE 0
+
 Job *parallel_for(Worker *worker, int begin_index, int end_index, int grain_size, void *array, int array_count, void *data, Parallel_for_function function) {
+#if USE_DEQUE
     Job_group *job_group = create_job_group();
     Parallel_for_data *parallel_for_data = create_parallel_for_data(begin_index, end_index, grain_size, array, array_count, data, function);
     Job *job = create_root_job(job_group, parallel_for_function, parallel_for_data);
     run_job(worker, job);
     wait_on_job_group(worker, job_group);
+#else 
+    for (int i = begin_index; i < end_index; ++i) {
+        function(i, array, data);
+    }
+#endif
 }
 
 void init_multithreading(Allocator *allocator, bool run_single_threaded, Worker_group *worker_group, Worker **out_main_worker) {
