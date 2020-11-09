@@ -228,6 +228,16 @@ static double get_time() {
 
 FILE *g_output_file;
 
+
+
+typedef struct Renderer_settings {
+    
+    //debug stuff
+    bool should_process_vertices;
+    bool run_once;
+    enum vertices_source { vertices_source_model, vertices_source_simple_image } vertices_source;
+} Renderer_settings;
+
 int main() {
     g_output_file = fopen("output_file", "w");
     
@@ -324,14 +334,15 @@ int main() {
     
     Worker_group worker_group;
     Worker *main_worker;
-    bool run_single_threaded = true;
-    init_multithreading(allocator, run_single_threaded, &worker_group, &main_worker);
+    init_multithreading(allocator, true, &worker_group, &main_worker);
     
-    bool should_process_vertices = false;
-    int num_vertices = 3;
-    
+#if 0
     Model model = load_model_from_obj();
     Pipeline_data pipeline_data = get_pipeline_data(model.num_vertices, model.vertices);
+#else
+    Vertex_buffer vertex_buffer = convert_static_positions_and_uvs_to_vertices(g_cube, array_count(g_cube) / 5);
+    Pipeline_data cube_pipeline_data = get_pipeline_data(&vertex_buffer);
+#endif
     
 #if 0
     const int stride = 8;
@@ -360,53 +371,32 @@ int main() {
 #endif
     
     float float_temp_vertices[] = {
-        511, 0, 15,    1, 0,
+        255, 0, 15,    1, 0,
         0, 0, 15,      0, 0,
-        0, 511, 15,    0, 1,
-        
-        0, 511, 15,    0, 1,
-        511, 511, 15,  1, 1,
-        511, 0, 15,    1, 0
+        0, 255, 15,    0, 1,
+#if 0
+        0, 255, 15,    0, 1,
+        255, 255, 15,  1, 1,
+        255, 0, 15,    1, 0
+#endif
     };
     
-    //Vertex *temp_vertices = convert_positions_and_uvs_to_vertices(float_temp_vertices, 6);
-    //Pipeline_data temp_pipeline_data = get_pipeline_data(6 , temp_vertices);
+    Vertex_buffer temp_vertex_buffer = convert_static_positions_and_uvs_to_vertices(float_temp_vertices, array_count(float_temp_vertices) / 5);
+    Pipeline_data temp_pipeline_data = get_pipeline_data(&temp_vertex_buffer);
     
-    //while(!g_window_should_close) {
-    for (int i = 0; i < 1; ++i) {
+    Renderer_settings renderer_settings = {
+        .should_process_vertices = true,
+        .run_once = false
+    };
+    
+    while(!g_window_should_close) {
         first_time = get_time();
         
-        //stuff
-        
-        //tickfunc
-#if 0
-        Vertex_soa vertex_soa = {0};
-        vertex_soa.vertex_array = (v4 *)allocate_frame(allocator, num_vertices * sizeof(v4));
-        vertex_soa.vertex_array[0] = (v4){511, 0, 15, 1};
-        vertex_soa.vertex_array[1] = (v4){0, 0, 15, 1};
-        vertex_soa.vertex_array[2] = (v4){0, 511, 15, 1};
-        vertex_soa.vertex_array[3] = (v4){0, 511, 15, 1};
-        vertex_soa.vertex_array[4] = (v4){511, 511, 15, 1};
-        vertex_soa.vertex_array[5] = (v4){511, 0, 15, 1};
-        
-        vertex_soa.uv_array = (v2 *)allocate_frame(allocator, num_vertices * sizeof(v2));
-        vertex_soa.uv_array[0] = (v2){1 ,0};
-        vertex_soa.uv_array[1] = (v2){0 ,0};
-        vertex_soa.uv_array[2] = (v2){0, 1};
-        vertex_soa.uv_array[3] = (v2){0 ,1};
-        vertex_soa.uv_array[4] = (v2){1 ,1};
-        vertex_soa.uv_array[5] = (v2){1, 0};
-        
-        vertex_soa.num_vertices = num_vertices;
-#endif
-        
-        
-        
-        if (should_process_vertices) {
-            process_vertices(main_worker, allocator, &pipeline_data, &scene, framebuffer.width, framebuffer.height);
+        if (renderer_settings.should_process_vertices) {
+            process_vertices(main_worker, allocator, &temp_pipeline_data, &scene, framebuffer.width, framebuffer.height);
         }
         
-        rasterize(main_worker, &pipeline_data, &texture, &framebuffer);
+        rasterize(main_worker, &temp_pipeline_data, &texture, &framebuffer);
         
         //printf("rasterizer: %lu\n", g_rasterizer_clock_cycles);
         
@@ -441,17 +431,24 @@ int main() {
         }
         
         reset_frame_memory(allocator);
+        
+        if (renderer_settings.run_once)
+            break;
     }
     
     deinit_multithreading(&worker_group);
     
     //printf("median: %f\n", 1 / (median_fps / (double)max_frames));
     printf("lowest fps: %f, highest_fps: %f, average fps: %f\n", lowest_fps, highest_fps, 1.0f / (average_fps / average_fps_counter));
+    
+    assert(ximage);
+    XDestroyImage(ximage);
     assert(display != NULL);
     XCloseDisplay(display);
     display = NULL;
     
     free_allocator(allocator);
+    
     
     return 0;
 }

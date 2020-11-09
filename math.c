@@ -140,13 +140,9 @@ v3 normalize_v3(v3 vec) {
 }
 
 m4 get_m4_identity() {
-#if 1
     m4 result =  {0};
     result.e[0][0] = result.e[1][1] = result.e[2][2] = result.e[3][3] = 1.0f;
-#else 
-    m4 result;
     
-#endif
     return result;
 }
 

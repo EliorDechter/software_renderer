@@ -19,6 +19,7 @@ const float FAR = 10000;
 const float FOVY = TO_RADIANS(60);
 //const v3 UP = {0, 1, 0};
 
+
 static unsigned char float_to_uchar(float value) {
     return (unsigned char)(value * 255);
 }
@@ -172,7 +173,27 @@ typedef struct Pipeline_data {
     v2 *normals;
 } Pipeline_data;
 
-Pipeline_data get_pipeline_data(int num_vertices, Vertex *vertices) {
+
+typedef struct Vertex_buffer {
+    Vertex *vertices;
+    u32 num_vertices;
+} Vertex_buffer;
+
+Vertex_buffer convert_static_positions_and_uvs_to_vertices(float *float_vertices, u32 num_vertices) {
+    Vertex *vertices = (Vertex *)allocate_frame(g_allocator, sizeof(Vertex) * num_vertices);
+    for (int i = 0; i < num_vertices; ++i) {
+        vertices[i].pos = get_v3(float_vertices[5 * i + 0], float_vertices[5 * i + 1], float_vertices[5 * i + 2]);
+        vertices[i].uv = get_v2(float_vertices[5 * i + 3], float_vertices[5 * i + 4]);
+        vertices[i].normal = get_v2(0, 0);
+    }
+    
+    Vertex_buffer vertex_buffer = {.vertices = vertices, .num_vertices = num_vertices};
+    return vertex_buffer;
+}
+
+Pipeline_data get_pipeline_data(Vertex_buffer *vertex_buffer) {
+    Vertex *vertices = vertex_buffer->vertices;
+    u32 num_vertices = vertex_buffer->num_vertices;
     v4 *positions = (v4 *)allocate_perm(g_allocator, num_vertices * sizeof(v4));
     v2 *uvs = (v2 *)allocate_perm(g_allocator, num_vertices * sizeof(v2));
     v2 *normals = (v2 *)allocate_perm(g_allocator, num_vertices * sizeof(v2));
@@ -205,17 +226,6 @@ void vertex_shader_function(int index, void *array, void *data) {
     *vertex = mul_m4_by_v4(vertex_shader_data->mvp, *vertex);
 }
 
-Vertex *convert_positions_and_uvs_to_vertices(float *float_vertices, u32 num_vertices) {
-    Vertex *vertices = (Vertex *)allocate_frame(g_allocator, sizeof(Vertex) * num_vertices);
-    for (int i = 0; i < num_vertices; ++i) {
-        vertices[i].pos = get_v3(float_vertices[5 * i + 0], float_vertices[5 * i + 1], float_vertices[5 * i + 2]);
-        vertices[i].uv = get_v2(float_vertices[5 * i + 3], float_vertices[5 * i + 4]);
-        vertices[i].normal = get_v2(0, 0);
-    }
-    
-    return vertices;
-}
-
 static void process_vertices(Worker *main_worker, Allocator *allocator, Pipeline_data *pipeline_data, const Scene *scene, u32 viewport_width, u32 viewport_height) {
     v4 *vertex_positions = pipeline_data->positions;
     v2 *vertex_uvs = pipeline_data->uvs;
@@ -227,7 +237,19 @@ static void process_vertices(Worker *main_worker, Allocator *allocator, Pipeline
     m4 mvp = mul_m4_by_m4(mul_m4_by_m4(model_matrix, view_matrix), projection_matrix);
     Vertex_shader_data vertex_shader_data = {0};
     vertex_shader_data.mvp = mvp;
-    parallel_for(main_worker, 0, vertices_num, 1, vertex_positions, vertices_num, &vertex_shader_data, vertex_shader_function);
+    //parallel_for(main_worker, 0, vertices_num, 1, vertex_positions, vertices_num, &vertex_shader_data, vertex_shader_function);
+    
+    //m4 view_matrix = get_m4_look_at(scene->camera.pos, scene->camera.target, get_v3(0.0f, 1.0f, 0.0f));
+    for (int i = 0; i < vertices_num; ++i) {
+        vertex_positions[i] = mul_m4_by_v4(view_matrix, vertex_positions[i]);
+    }
+    
+    //convert camera coordinates to clip/projection coordinates
+    //m4 projection_matrix = get_m4_perspective(FOVY, scene->camera.aspect, NEAR, FAR);
+    
+    for (int i = 0; i < vertices_num; ++i) {
+        vertex_positions[i] = mul_m4_by_v4(projection_matrix, vertex_positions[i]);
+    }
     
     //clip
     //TODO: clip the near plane? guard band clipping?
@@ -255,8 +277,8 @@ static void process_vertices(Worker *main_worker, Allocator *allocator, Pipeline
     //TODO: fix z coordinates !!!!
     //TODO: view frustrum culling
     pipeline_data->num_vertices = num_clipped_vertices;
-    pipeline_data->positions = vertex_positions;
-    pipeline_data->uvs = vertex_uvs;
+    pipeline_data->positions = clipped_vertices;
+    pipeline_data->uvs = vertex_uvs; //this will break the moment u clip
 }
 
 typedef struct Triangle {
@@ -575,8 +597,8 @@ static void rasterize(Worker *main_worker, Pipeline_data *pipeline_data, Texture
         Triangle *triangle = triangles + i;
         for (int j = 0; j < 3; ++j) {
             int index = i * 3 + j;
-            triangle->positions[index] = pipeline_data->positions[index];
-            triangle->uvs[index] = pipeline_data->uvs[index];
+            triangle->positions[j] = pipeline_data->positions[index];
+            triangle->uvs[j] = pipeline_data->uvs[index];
         }
     }
     
@@ -615,7 +637,5 @@ static void rasterize(Worker *main_worker, Pipeline_data *pipeline_data, Texture
     parallel_for(main_worker, 0, num_bins, 1, bins, num_bins, &bin_rasterization_data, rasterize_bins);
     
 }
-
-
 
 #endif
