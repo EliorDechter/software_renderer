@@ -194,9 +194,9 @@ Vertex_buffer convert_static_positions_and_uvs_to_vertices(float *float_vertices
 Pipeline_data get_pipeline_data(Vertex_buffer *vertex_buffer) {
     Vertex *vertices = vertex_buffer->vertices;
     u32 num_vertices = vertex_buffer->num_vertices;
-    v4 *positions = (v4 *)allocate_perm(g_allocator, num_vertices * sizeof(v4));
-    v2 *uvs = (v2 *)allocate_perm(g_allocator, num_vertices * sizeof(v2));
-    v2 *normals = (v2 *)allocate_perm(g_allocator, num_vertices * sizeof(v2));
+    v4 *positions = (v4 *)allocate_frame(g_allocator, num_vertices * sizeof(v4));
+    v2 *uvs = (v2 *)allocate_frame(g_allocator, num_vertices * sizeof(v2));
+    v2 *normals = (v2 *)allocate_frame(g_allocator, num_vertices * sizeof(v2));
     
     for (int i = 0; i < num_vertices; ++i) {
         assert( vertices[i].uv.u >= 0 && vertices[i].uv.v >= 0); 
@@ -261,7 +261,7 @@ static void process_vertices(Worker *main_worker, Allocator *allocator, Pipeline
         v4 *vertex = clipped_vertices + i;
         vertex->x /= vertex->w;
         vertex->y /= vertex->w;
-        //vertex->z /= vertex->w; //NOTE: not so sure about this...
+        vertex->z /= vertex->w; //NOTE: not so sure about this...
     } 
     
     //backface culling... (under counstruction)
@@ -274,6 +274,7 @@ static void process_vertices(Worker *main_worker, Allocator *allocator, Pipeline
         vertex->z = (vertex->z  + 1) * 0.5f;
     }
     
+    //TODO: make better TODO's
     //TODO: fix z coordinates !!!!
     //TODO: view frustrum culling
     pipeline_data->num_vertices = num_clipped_vertices;

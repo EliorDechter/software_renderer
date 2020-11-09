@@ -371,18 +371,19 @@ int main() {
 #endif
     
     float float_temp_vertices[] = {
-        255, 0, 15,    1, 0,
-        0, 0, 15,      0, 0,
-        0, 255, 15,    0, 1,
 #if 0
-        0, 255, 15,    0, 1,
+        255, 255, 15,    1, 0,
+        0, 255, 15,      0, 0,
+        255, 0, 15,    0, 1,
+#endif
+#if 1
+        10, 255, 15,    0, 1,
         255, 255, 15,  1, 1,
-        255, 0, 15,    1, 0
+        255, 10, 15,    1, 0
 #endif
     };
     
     Vertex_buffer temp_vertex_buffer = convert_static_positions_and_uvs_to_vertices(float_temp_vertices, array_count(float_temp_vertices) / 5);
-    Pipeline_data temp_pipeline_data = get_pipeline_data(&temp_vertex_buffer);
     
     Renderer_settings renderer_settings = {
         .should_process_vertices = true,
@@ -392,11 +393,13 @@ int main() {
     while(!g_window_should_close) {
         first_time = get_time();
         
+        Pipeline_data pipeline_data = get_pipeline_data(&temp_vertex_buffer);
+        
         if (renderer_settings.should_process_vertices) {
-            process_vertices(main_worker, allocator, &temp_pipeline_data, &scene, framebuffer.width, framebuffer.height);
+            process_vertices(main_worker, allocator, &pipeline_data, &scene, framebuffer.width, framebuffer.height);
         }
         
-        rasterize(main_worker, &temp_pipeline_data, &texture, &framebuffer);
+        rasterize(main_worker, &pipeline_data, &texture, &framebuffer);
         
         //printf("rasterizer: %lu\n", g_rasterizer_clock_cycles);
         
