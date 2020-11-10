@@ -395,11 +395,11 @@ static void rasterize_bins(int index, void *array,  void *data) {
         v2i vertex1 = get_v2i_from_v2(get_v2_from_v4(vertices[vertex_index + 1]));
         v2i vertex2 = get_v2i_from_v2(get_v2_from_v4(vertices[vertex_index + 0]));
         
-        //TODO: clip with screen
-        s32 start_x = fmin(bin_begin_x, fmax(0, fmin(fmin(vertex0.x, vertex1.x), vertex2.x)));
-        s32 end_x = fmax(bin_end_x, fmin(framebuffer->width, fmax(fmax(vertex0.x, vertex1.x), vertex2.x)));
-        s32 start_y = fmin(bin_begin_y, fmax(0, fmin(fmin(vertex0.y, vertex1.y), vertex2.y)));
-        s32 end_y = fmax(bin_end_x, fmin(framebuffer->height, fmax(fmax(vertex0.y, vertex1.y), vertex2.y)));
+        
+        s32 start_x = fmax(bin_begin_x, fmin(fmin(vertex0.x, vertex1.x), vertex2.x));
+        s32 end_x = fmin(bin_end_x, fmax(fmax(vertex0.x, vertex1.x), vertex2.x));
+        s32 start_y = fmax(bin_begin_y, fmin(fmin(vertex0.y, vertex1.y), vertex2.y));
+        s32 end_y = fmin(bin_end_x, fmax(fmax(vertex0.y, vertex1.y), vertex2.y));
         
         //TODO: some vertices may be clipped, change this code once clipping is done
         s32 A01 = vertex0.y - vertex1.y;
@@ -453,10 +453,11 @@ static void rasterize_bins(int index, void *array,  void *data) {
         m128 z0 = set_broadcast_m128(vertices[vertex_index + 2].z);
         m128 z1 =  set_broadcast_m128(vertices[vertex_index + 1].z);
         m128 z2 =  set_broadcast_m128(vertices[vertex_index + 0].z);
-        
+#if 0
         m128 z0_new = set_broadcast_m128(vertices[vertex_index + 2].z);
         m128 z1_new =  set_broadcast_m128(vertices[vertex_index + 1].z);
         m128 z2_new =  set_broadcast_m128(vertices[vertex_index + 0].z);
+#endif
         
         m128 tex_u0 = set_broadcast_m128(uvs[vertex_index + 2].u);
         m128 tex_u1 = set_broadcast_m128(uvs[vertex_index + 1].u);
@@ -626,7 +627,7 @@ static void rasterize(Worker *main_worker, Pipeline_data *pipeline_data, Texture
     parallel_for(main_worker, 0, num_bins, 1, bins, num_bins, &binner_data, bin_triangles);
     
     //sort triangles
-    sort_bins(bins, num_bins);
+    //sort_bins(bins, num_bins);
     
     //rasterize bins
     Bin_rasterization_data bin_rasterization_data = {0};

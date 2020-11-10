@@ -6,6 +6,7 @@
 //-make sure every thread has its own cahceline aligned memory
 //-texture filtering
 //-put a cap on number of jobs & finish with the multithreading code already
+//-make sure each job operates on a single cache line - which is not the case right now
 
 #include <stdio.h>
 #include <assert.h>
@@ -371,12 +372,12 @@ int main() {
 #endif
     
     float float_temp_vertices[] = {
-#if 0
-        255, 255, 15,    1, 0,
-        0, 255, 15,      0, 0,
-        255, 0, 15,    0, 1,
-#endif
 #if 1
+        255, 0, 50,    1, 0,
+        0, 0, 50,      0, 0,
+        0, 255, 50,    0, 1,
+#endif
+#if 0
         10, 255, 15,    0, 1,
         255, 255, 15,  1, 1,
         255, 10, 15,    1, 0
@@ -386,7 +387,7 @@ int main() {
     Vertex_buffer temp_vertex_buffer = convert_static_positions_and_uvs_to_vertices(float_temp_vertices, array_count(float_temp_vertices) / 5);
     
     Renderer_settings renderer_settings = {
-        .should_process_vertices = true,
+        .should_process_vertices = false,
         .run_once = false
     };
     

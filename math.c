@@ -266,7 +266,7 @@ Bounding_box get_2d_bounding_box_from_3_v2(v2 a, v2 b, v2 c) {
     bounding_box.x0 = min_s32(min_s32(a.x, b.x), c.x);
     bounding_box.y0 = min_s32(min_s32(a.y, b.y), c.y);
     bounding_box.x1 = max_s32(max_s32(a.x, b.x), c.x);
-    bounding_box.y1 = min_s32(max_s32(a.y, b.y), c.y);
+    bounding_box.y1 = max_s32(max_s32(a.y, b.y), c.y);
     
     return bounding_box;
 }
