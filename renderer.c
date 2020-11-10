@@ -19,7 +19,6 @@ const float FAR = 10000;
 const float FOVY = TO_RADIANS(60);
 //const v3 UP = {0, 1, 0};
 
-
 static unsigned char float_to_uchar(float value) {
     return (unsigned char)(value * 255);
 }
@@ -125,6 +124,13 @@ typedef struct __attribute__((packed)) Vertex  {
     //v3 texture;
 } Vertex;
 
+void change_object_size(Vertex *vertices, u32 num_vertices, int amount) {
+    for (u32 i = 0; i < num_vertices; ++i) {
+        vertices[i].pos.x *= amount;
+        vertices[i].pos.y *= amount;
+    }
+}
+
 typedef enum Outcode {outcode_inside = 0, outcode_left = 1, outcode_right = 2, outcode_bottom = 4, outcode_top = 8} Outcode;
 
 static Outcode compute_out_code(v4 v) {
@@ -173,14 +179,13 @@ typedef struct Pipeline_data {
     v2 *normals;
 } Pipeline_data;
 
-
 typedef struct Vertex_buffer {
     Vertex *vertices;
     u32 num_vertices;
 } Vertex_buffer;
 
 Vertex_buffer convert_static_positions_and_uvs_to_vertices(float *float_vertices, u32 num_vertices) {
-    Vertex *vertices = (Vertex *)allocate_frame(g_allocator, sizeof(Vertex) * num_vertices);
+    Vertex *vertices = (Vertex *)allocate_perm(g_allocator, sizeof(Vertex) * num_vertices);
     for (int i = 0; i < num_vertices; ++i) {
         vertices[i].pos = get_v3(float_vertices[5 * i + 0], float_vertices[5 * i + 1], float_vertices[5 * i + 2]);
         vertices[i].uv = get_v2(float_vertices[5 * i + 3], float_vertices[5 * i + 4]);
@@ -191,7 +196,7 @@ Vertex_buffer convert_static_positions_and_uvs_to_vertices(float *float_vertices
     return vertex_buffer;
 }
 
-Pipeline_data get_pipeline_data(Vertex_buffer *vertex_buffer) {
+Pipeline_data get_pipeline_data(const Vertex_buffer *vertex_buffer) {
     Vertex *vertices = vertex_buffer->vertices;
     u32 num_vertices = vertex_buffer->num_vertices;
     v4 *positions = (v4 *)allocate_frame(g_allocator, num_vertices * sizeof(v4));
@@ -199,7 +204,7 @@ Pipeline_data get_pipeline_data(Vertex_buffer *vertex_buffer) {
     v2 *normals = (v2 *)allocate_frame(g_allocator, num_vertices * sizeof(v2));
     
     for (int i = 0; i < num_vertices; ++i) {
-        assert( vertices[i].uv.u >= 0 && vertices[i].uv.v >= 0); 
+        assert(vertices[i].uv.u >= 0 && vertices[i].uv.v >= 0); 
     }
     
     for (int i = 0; i < num_vertices; ++i) {
@@ -230,6 +235,11 @@ static void process_vertices(Worker *main_worker, Allocator *allocator, Pipeline
     v4 *vertex_positions = pipeline_data->positions;
     v2 *vertex_uvs = pipeline_data->uvs;
     u32 vertices_num = pipeline_data->num_vertices;
+    u32 num_vertices = vertices_num; //TODOl: srlsly?
+    
+    for (int i = 0; i < num_vertices; ++i) {
+        //TODO: assert anti-clockwise order
+    }
     
     m4 model_matrix = get_m4_identity();
     m4 view_matrix = get_m4_look_at(scene->camera.pos, scene->camera.target, get_v3(0.0f, 1.0f, 0.0f));
@@ -237,19 +247,18 @@ static void process_vertices(Worker *main_worker, Allocator *allocator, Pipeline
     m4 mvp = mul_m4_by_m4(mul_m4_by_m4(model_matrix, view_matrix), projection_matrix);
     Vertex_shader_data vertex_shader_data = {0};
     vertex_shader_data.mvp = mvp;
-    //parallel_for(main_worker, 0, vertices_num, 1, vertex_positions, vertices_num, &vertex_shader_data, vertex_shader_function);
     
-    //m4 view_matrix = get_m4_look_at(scene->camera.pos, scene->camera.target, get_v3(0.0f, 1.0f, 0.0f));
+#if 0
+    parallel_for(main_worker, 0, vertices_num, 1, vertex_positions, vertices_num, &vertex_shader_data, vertex_shader_function);
+#else
     for (int i = 0; i < vertices_num; ++i) {
         vertex_positions[i] = mul_m4_by_v4(view_matrix, vertex_positions[i]);
     }
     
-    //convert camera coordinates to clip/projection coordinates
-    //m4 projection_matrix = get_m4_perspective(FOVY, scene->camera.aspect, NEAR, FAR);
-    
     for (int i = 0; i < vertices_num; ++i) {
         vertex_positions[i] = mul_m4_by_v4(projection_matrix, vertex_positions[i]);
     }
+#endif
     
     //clip
     //TODO: clip the near plane? guard band clipping?
@@ -395,27 +404,37 @@ static void rasterize_bins(int index, void *array,  void *data) {
         v2i vertex1 = get_v2i_from_v2(get_v2_from_v4(vertices[vertex_index + 1]));
         v2i vertex2 = get_v2i_from_v2(get_v2_from_v4(vertices[vertex_index + 0]));
         
-        
-        s32 start_x = fmax(bin_begin_x, fmin(fmin(vertex0.x, vertex1.x), vertex2.x));
+#if 0
+        //TODO: fix
+        s32 begin_x = fmax(bin_begin_x, fmin(fmin(vertex0.x, vertex1.x), vertex2.x));
         s32 end_x = fmin(bin_end_x, fmax(fmax(vertex0.x, vertex1.x), vertex2.x));
-        s32 start_y = fmax(bin_begin_y, fmin(fmin(vertex0.y, vertex1.y), vertex2.y));
-        s32 end_y = fmin(bin_end_x, fmax(fmax(vertex0.y, vertex1.y), vertex2.y));
+        s32 begin_y = fmax(bin_begin_y, fmin(fmin(vertex0.y, vertex1.y), vertex2.y));
+        s32 end_y = fmin(bin_end_y, fmax(fmax(vertex0.y, vertex1.y), vertex2.y));
+#else
+        s32 begin_x = bin_begin_x;
+        s32 end_x = bin_end_x;
+        s32 begin_y = bin_begin_y;
+        s32 end_y = bin_end_y;
+#endif
+        
+        assert(begin_x < end_x);
+        assert(begin_y < end_y);
         
         //TODO: some vertices may be clipped, change this code once clipping is done
         s32 A01 = vertex0.y - vertex1.y;
         s32 B01 = vertex1.x - vertex0.x;
         s32 C01 =  vertex0.x * vertex1.y - vertex0.y * vertex1.x;
-        s32 F01 = A01 * start_x + B01 * start_y + C01;
+        s32 F01 = A01 * begin_x + B01 * begin_y + C01;
         
         s32 A12 = vertex1.y - vertex2.y;
         s32 B12 = vertex2.x - vertex1.x;
         s32 C12 =  vertex1.x * vertex2.y - vertex1.y * vertex2.x;
-        s32 F12 = A12 * start_x + B12 * start_y + C12;
+        s32 F12 = A12 * begin_x + B12 * begin_y + C12;
         
         s32 A20 = vertex2.y - vertex0.y;
         s32 B20 = vertex0.x - vertex2.x;
         s32 C20 =  vertex2.x * vertex0.y - vertex2.y * vertex0.x;
-        s32 F20 = A20 * start_x + B20 * start_y + C20;
+        s32 F20 = A20 * begin_x + B20 * begin_y + C20;
         
 #if 1
         u32 x_increment = 2;
@@ -480,15 +499,15 @@ static void rasterize_bins(int index, void *array,  void *data) {
         m128 z2_reciprocal = set_broadcast_m128(1.0 / vertices[vertex_index + 0].z);
         
         //TODO: make sure you understand the math behind this line
-        s32 buffer_row_index = start_y * framebuffer->width + 2 * start_x;
+        s32 buffer_row_index = begin_y * framebuffer->width + 2 * begin_x;
         
-        for (int y = start_y; y <= end_y; y += y_increment, buffer_row_index += framebuffer->width * 2) {
+        for (int y = begin_y; y <= end_y; y += y_increment, buffer_row_index += framebuffer->width * 2) {
             int buffer_index = buffer_row_index;
             m128i w0 = w0_row;
             m128i w1 = w1_row;
             m128i w2 = w2_row;
             
-            for (int x = start_x; x <= end_x; x += x_increment, buffer_index += 4) {
+            for (int x = begin_x; x <= end_x; x += x_increment, buffer_index += 4) {
                 m128i w = or_m128i(w0, or_m128i(w1, w2));
                 m128i mask = compare_greater_than_m128i(w, _mm_setzero_si128());
                 
@@ -581,7 +600,7 @@ static void rasterize_bins(int index, void *array,  void *data) {
         }
         
         u64 new_current_clock_cycles = __rdtscp(&temp_for_clocks);
-        g_rasterizer_clock_cycles = (new_current_clock_cycles - current_clock_cycles) / ((end_x - start_x) * (end_y - start_y));
+        g_rasterizer_clock_cycles = (new_current_clock_cycles - current_clock_cycles) / ((end_x - begin_x) * (end_y - begin_y));
     }
 }
 
@@ -610,13 +629,17 @@ static void rasterize(Worker *main_worker, Pipeline_data *pipeline_data, Texture
     u32 tile_height = out_framebuffer->height / num_bins_in_column;
     int num_bins = num_bins_in_row * num_bins_in_column;
     Bin *bins = (Bin *)allocate_frame(g_allocator, num_bins *  sizeof(Bin));
-    for (int i = 0; i < num_bins; ++i) {
-        bins[i].bounding_box.x0 = i * tile_width;
-        bins[i].bounding_box.x1 = (i + 1) * tile_width;
-        bins[i].bounding_box.y0 = i * tile_height;
-        bins[i].bounding_box.y1 =  (i + 1) * tile_height;
-        bins[i].triangles = (Triangle *)allocate_frame(g_allocator, sizeof(Triangle) * MAX_NUM_TRIANGLES_PER_BIN);
-        bins[i].num_triangles = 0;
+    for (int y = 0; y  < num_bins_in_column; ++y) {
+        for (int x = 0; x < num_bins_in_row; ++x) {
+            //TODO: should it be 512 or 511?
+            Bin *bin = &bins[x + y * num_bins_in_row];
+            bin->bounding_box.x0 = x * tile_width;
+            bin->bounding_box.x1 = bin->bounding_box.x0 + tile_width;
+            bin->bounding_box.y0 = y * tile_width;
+            bin->bounding_box.y1 = bin->bounding_box.y0 + tile_height;
+            bin->triangles = (Triangle *)allocate_frame(g_allocator, sizeof(Triangle) * MAX_NUM_TRIANGLES_PER_BIN);
+            bin->num_triangles = 0;
+        }
     }
     
     Binner_data binner_data = {

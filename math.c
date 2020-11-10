@@ -247,7 +247,7 @@ v4 get_v4_from_v3(v3 v, f32 last_element) {
 }
 
 typedef struct Bounding_box {
-    int x0, y0, x1, y1;
+    int x0, x1, y0, y1;
 } Bounding_box;
 
 Bounding_box get_2d_bounding_box_from_4_coords(int x0, int y0, int x1, int y1) {

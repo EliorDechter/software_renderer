@@ -7,6 +7,7 @@
 //-texture filtering
 //-put a cap on number of jobs & finish with the multithreading code already
 //-make sure each job operates on a single cache line - which is not the case right now
+//-idea: nested iterator
 
 #include <stdio.h>
 #include <assert.h>
@@ -337,13 +338,15 @@ int main() {
     Worker *main_worker;
     init_multithreading(allocator, true, &worker_group, &main_worker);
     
-#if 0
     Model model = load_model_from_obj();
-    Pipeline_data pipeline_data = get_pipeline_data(model.num_vertices, model.vertices);
-#else
-    Vertex_buffer vertex_buffer = convert_static_positions_and_uvs_to_vertices(g_cube, array_count(g_cube) / 5);
-    Pipeline_data cube_pipeline_data = get_pipeline_data(&vertex_buffer);
-#endif
+    Vertex_buffer model_vertex_buffer = {
+        .num_vertices = model.num_vertices,
+        .vertices = model.vertices
+    };
+    
+    Vertex_buffer cube_vertex_buffer = convert_static_positions_and_uvs_to_vertices(g_cube_face, array_count(g_cube_face) / 5);
+    
+    change_object_size(cube_vertex_buffer.vertices, cube_vertex_buffer.num_vertices, 1);
     
 #if 0
     const int stride = 8;
@@ -387,14 +390,19 @@ int main() {
     Vertex_buffer temp_vertex_buffer = convert_static_positions_and_uvs_to_vertices(float_temp_vertices, array_count(float_temp_vertices) / 5);
     
     Renderer_settings renderer_settings = {
-        .should_process_vertices = false,
+        .should_process_vertices = true,
         .run_once = false
     };
     
+    u32 frame_number = 0;
+    
+    begin_frame_allocation(allocator);
+    
     while(!g_window_should_close) {
+        frame_number++;
         first_time = get_time();
         
-        Pipeline_data pipeline_data = get_pipeline_data(&temp_vertex_buffer);
+        Pipeline_data pipeline_data = get_pipeline_data(&cube_vertex_buffer);
         
         if (renderer_settings.should_process_vertices) {
             process_vertices(main_worker, allocator, &pipeline_data, &scene, framebuffer.width, framebuffer.height);

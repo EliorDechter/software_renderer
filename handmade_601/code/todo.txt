@@ -1,0 +1,65 @@
+  - Graphics upgrade
+    - Fix unproject, GetCameraRectangleAtTarget
+      - Handle divide-by-z in Unproject
+      - Fix clip rectangles for debug UI
+      - Fix Z settings for debug UI
+    - Fix Z buffer to be better resolution - what's the best plan here?
+    - Re-enable alpha fading
+    - Re-enable fog
+    - Particle systems
+      - Bug with sliding relative to the grid during camera offset?
+    - Transition to Real Artwork
+      - Clean up our notion of multi-part entities and how they are animated
+    - Lighting
+
+  - Implement multiple sim regions per frame
+    - Fix hash table routines in sim_region to not have to do clears on returns
+      (just have them return a bool as to whether they found the entry or not)         
+    - Eliminate world mode from sim step entirely
+    - Per-entity clocking
+    - Sim region merging?  For multiple players?
+  
+  - Collision detection?
+    - Clean up predicate proliferation!  Can we make a nice clean
+      set of flags/rules so that it's easy to understand how
+      things work in terms of special handling?  This may involve
+      making the iteration handle everything instead of handling
+      overlap outside and so on.
+    - Transient collision rules!  Clear based on flag.
+      - Allow non-transient rules to override transient ones.
+      - Entry/exit?
+    - What's the plan for robustness / shape definition?
+    - (Implement reprojection to handle interpenetration)
+    - "Things pushing other things"
+
+  PRODUCTION
+  -> GAME
+    - Rudimentary world gen (no quality, just "what sorts of things" we do)
+      - Placement of background things
+      - Connectivity?
+        - Large-scale AI Pathfinding?
+      - Non-overlapping?
+      - Map display
+        - Magnets - how they work???
+    - Rigorous definition of how things move, when things trigger, etc.
+  - Metagame / save game?
+    - How do you enter "save slot"?
+    - Persistent unlocks/etc.
+    - Do we allow saved games?  Probably yes, just only for "pausing",
+    * Continuous save for crash recovery?
+
+  CLEAN UP
+  - Debug code
+    - Diagramming
+    - Draw tile chunks so we can verify that things are aligned / in the chunks we want them to be in / etc.
+    - Frame view not showing bad frames?
+  - Hardware Rendering
+    - Shaders?
+  - Pixel Buffer Objects for texture downloads?
+    
+  - Audio
+    - FIX CLICKING BUG AT END OF SAMPLES!!!
+
+  EXTRA CREDIT :)
+  - Serious optimization of the software renderer
+  

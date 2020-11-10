@@ -172,5 +172,3 @@ Model load_model_from_obj() {
     
     return model;
 }
-
-

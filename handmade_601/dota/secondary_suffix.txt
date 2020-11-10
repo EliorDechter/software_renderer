@@ -1,0 +1,13 @@
+werk
+copter
+back
+rider
+lancer
+mancer
+
+tail
+lore
+stealer
+caller
+walker
+holder

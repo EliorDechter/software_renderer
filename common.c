@@ -35,11 +35,19 @@ typedef double f64;
 #define TO_RADIANS(degrees) ((PI / 180) * (degrees))
 #define TO_DEGREES(radians) ((180 / PI) * (radians))
 
+typedef struct Buffer {
+    u8 *data;
+    u32 size;
+} Buffer;
+
+typedef Buffer String;
+
 typedef struct Allocator {
     u8 *perm_memory_base;
     size_t perm_memory_used;
     size_t perm_memory_size;
     
+    bool begin_frame_allocation;
     u8 *frame_memory_base;
     size_t frame_memory_used;
     size_t frame_memory_size;
@@ -70,7 +78,12 @@ u8 *allocate_perm_aligned(Allocator *allocator, size_t allocation_size, u32 alig
     return memory + offset;
 }
 
+void begin_frame_allocation(Allocator *allocator) {
+    allocator->begin_frame_allocation = true;
+}
+
 u8 *allocate_frame_aligned(Allocator *allocator, size_t allocation_size, u32 alignment) {
+    assert(allocator->begin_frame_allocation);
     uintptr_t alignment_mask = alignment - 1;
     u8 *memory = allocator->frame_memory_base + allocator->frame_memory_used;
     uintptr_t offset = 0;
@@ -103,6 +116,7 @@ u8 *allocate_perm(Allocator *allocator, size_t allocation_size) {
 }
 
 u8 *allocate_frame(Allocator *allocator, size_t allocation_size) {
+    assert(allocator->begin_frame_allocation);
     u32 alignment = 4;
     uintptr_t alignment_mask = alignment - 1;
     u8 *memory = allocator->frame_memory_base + allocator->frame_memory_used;
