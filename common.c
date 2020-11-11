@@ -41,7 +41,22 @@ typedef struct Buffer {
 } Buffer;
 
 typedef Buffer String;
+typedef Buffer Array;
 
+void append_to_string(String *string, u8 value) {
+    string->data[string->size++] = value;
+}
+#if 0
+s32 convert_string_to_number(String string) {
+    //TODO: probably broken
+    int num = 0;
+    for (int i = string.size; i >= 0; --i) {
+        num += string_number.data[i] * pow(10, string.size - i);
+    }
+    
+    return num;
+}
+#endif
 typedef struct Allocator {
     u8 *perm_memory_base;
     size_t perm_memory_used;

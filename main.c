@@ -20,6 +20,10 @@
 #include <X11/Xutil.h>
 #include <stdbool.h>
 #include <x86intrin.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h> 
+#include "Parser.c"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wall"
@@ -230,8 +234,6 @@ static double get_time() {
 
 FILE *g_output_file;
 
-
-
 typedef struct Renderer_settings {
     
     //debug stuff
@@ -240,7 +242,32 @@ typedef struct Renderer_settings {
     enum vertices_source { vertices_source_model, vertices_source_simple_image } vertices_source;
 } Renderer_settings;
 
+
+typedef struct File {
+    const char *name;
+    time_t modification_time;
+} File;
+
+bool check_and_change_modification_time_of_file(File *file) {
+    struct stat new_modification_time;
+    int error = stat(file->name, &new_modification_time);
+    if (error != 0) { 
+        //error
+    }
+    
+    if (new_modification_time.st_mtime > file->modification_time) {
+        file->modification_time = new_modification_time.st_mtime;
+        return true;
+    }
+    
+    return false;
+}
+
 int main() {
+    
+    //Buffer test_vertex_buffer = parse_vertices_file("test_vertices.pav");
+    File vertices_file = {.name = "test_vertices.pav", .modification_time = 0};
+    
     g_output_file = fopen("output_file", "w");
     
     const char *const WINDOW_TITLE = "Viewer";
@@ -401,6 +428,10 @@ int main() {
     while(!g_window_should_close) {
         frame_number++;
         first_time = get_time();
+        
+        if (check_and_change_modification_time_of_file(&vertices_file)) {
+            fprintf(stderr, "changed\n");
+        }
         
         Pipeline_data pipeline_data = get_pipeline_data(&cube_vertex_buffer);
         

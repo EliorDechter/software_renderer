@@ -1,5 +1,5 @@
 
-u8 *load_file_to_buffer(u8 *file_name) {
+Buffer load_file_to_buffer(u8 *file_name) {
     FILE *file = fopen(file_name, "r");
     if (!file) {
         pritnf("%s not found/n", file_name);
@@ -10,10 +10,11 @@ u8 *load_file_to_buffer(u8 *file_name) {
     int size = ftell(file);
     fseek(file, 0, SEEK_SET);
     
-    char *buffer = malloc(size); //TODO: how to use a variable sized allocation inside the perm allocator
-    fread(buffer, size, 1, file);
+    char *data = malloc(size); //TODO: how to use a variable sized allocation inside the perm allocator
+    fread(data, size, 1, file);
     
     fclose(file);
+    Buffer buffer = {.size = size, .data = data };
     
     return buffer;
 }
@@ -53,7 +54,7 @@ typedef struct Token {
     s32 line_number;
     
     Token_type type;
-    string text;
+    String string;
     f32 float_value;
     s32 int_value;
 } Token;
@@ -98,24 +99,58 @@ Token get_next_token(Tokenizer *tokenizer) {
             printf("missing a number after sign at (row: %d column: %d)", tokenizer->row_number, tokenizer->column_number);
         }
         
-        String string_number;
+        String string_number; //TODO: Fix
         for (int i = 0; current_char >= 0 && current_char <= 9; ++i) {
-            assert(i < 10);
-            char_num = move_tokenizer_to_next_char(tokenizer);
+            append_to_string(&string_numer, move_tokenizer_to_next_char(tokenizer));
         }
         
-        for (int i = string.size; i < 10; ++i) {
-            
+        s32 num = convert_string_to_number(string);
+    }
+    else if (current_char >= 0 && current_char <= 9) {
+        u8 sign = current_char;
+        ++tokenizer->current_char;
+        current_char = *tokenizer->current_char;
+        if (!(current_char >= 0 && current_char <= 9)) {
+            printf("missing a number after sign at (row: %d column: %d)", tokenizer->row_number, tokenizer->column_number);
         }
+        
+        String string_number; //TODO: Fix
+        for (int i = 0; current_char >= 0 && current_char <= 9; ++i) {
+            append_to_string(&string_numer, move_tokenizer_to_next_char(tokenizer));
+        }
+        
+        s32 num = convert_string_to_number(string);
+    }
+    else if ((current_char >= 'a' && current_char <= 'z') || (current_char >= 'A' && current_char <= 'Z')) {
+        //parse string
     }
 }
+
+String create_string() {
+    String string = {
+        .data = malloc(20),
+        .size = 0
+    };
+    
+    return string;
 }
 
-void refill_tokenizer(Tokenizer *tokenizer) {
-    //TODO
+Token create_token() {
+    Token token = {
+        .file_name = tokenizer->file_name,
+        .column_number = 0,
+        .line_number = 0,
+        
+        .type = token_type_unkown,
+        .string = create_string(),
+        float_value = 0,
+        int_value = 0
+    };
+    
+    return token;
 }
 
-Tokenizer get_tokenizer(Buffer buffer, String string) {
+Tokenizer create_tokenizer(Buffer buffer, String string) {
     Tokenizer tokenizer = {
         .file_name = file_name,
         .column_number = 1,
@@ -126,9 +161,63 @@ Tokenizer get_tokenizer(Buffer buffer, String string) {
     return tokenizer;
 }
 
-void parse_test_vertices_file() {
-    u8 *buffer = load_file_to_buffer("test_vertices.pav");
+void print_parser_error(Tokenizer tokenizer, char *message) {
+    printf("Error (%d, %d): %s", tokenizer.row_num, tokenizer.column_num, message);
+}
+
+char *convert_token_type_to_string(Token_type token_type) {
+    //todo
+    return NULL;
+}
+
+Token get_next_token_with_expectation(Tokenizer *tokenizer, Token_type expected_type) {
+    Token token = get_next_token(&tokenizer);
+    if (token.type != toke_type_open_brace) {
+        print_parser_error(tokenizer, "expected %s", convert_token_type_to_string(expected_type));
+        exit(1);
+    }
+}
+
+void parse_test_vertices_file(const char *file_name) {
+    Buffer buffer = load_file_to_buffer(file_name);
     
-    
-    
+    Token token = create_token();
+    Buffer vertex_buffer = {0};
+    char *buffer_name = malloc(20);; //TODO: allocate
+    //bool get_next_vertex_buffer = true;
+    while (1) {
+        
+        token = get_next_token_with_expectation(&tokenizer, token_type_identifier);
+        char *buffer_name = token.string;
+        
+        get_next_token_with_expectation(&tokenizer, token_type_equal);
+        get_next_token_with_expectation(&tokenizer, token_type_open_brace);
+        
+        token = get_next_token(&tokenizer);
+        if (token.type == token_type_closed_brace) {
+            
+        }
+        
+        while (1) {
+            token = get_next_token(&tokenizer);
+            if (token.type == token_type_number) {
+                add_to_buffer(&vertex_buffer, token.float_num);
+                
+                token = get_next_token(&tokenizer);
+                if (token.type == token_type_comma) {
+                    
+                }
+                if (token.type == token_type_brace) {
+                    break;
+                }
+                else {
+                    //error
+                }
+            }
+            else {
+                //error
+            }
+        }
+        
+    }
 }
