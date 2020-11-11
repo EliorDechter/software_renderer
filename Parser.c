@@ -23,6 +23,51 @@ typedef struct Buffer_with_name {
     String name;
 } Buffer_with_name;
 
+typedef struct Tokenizer {
+    char *file_name;
+    u8 buffer_size;
+    s32 column_number;
+    s32 line_number;
+    //stream
+    
+    //char *input;
+    //char at[2];
+    u8 *current_char;
+    
+    bool error;
+} Tokenizer;
+
+typedef enum Token_type {
+    token_type_unkown,
+    
+    token_type_open_brace,
+    token_type_closed_brace,
+    token_type_number,
+    token_type_string,
+    token_type_identifier,
+    
+    token_type_spacing,
+    token_type_eof,
+    token_type_comment,
+    
+    token_type_null_terminator
+} Token_type;
+
+typedef struct Token {
+    string file_name;
+    s32 column_number;
+    s32 line_number;
+    
+    Token_type type;
+    String string;
+    Number num;
+} Token;
+
+typedef struct String_iterator {
+    String *string;
+    char *current_char;
+} Strin_iterator;
+
 Buffer_with_name create_buffer_with_name(size_t buffer_size) {
     Buffer_with_name buffer_with_name = {
         .buffer = create_buffer(buffer_size),
@@ -31,7 +76,6 @@ Buffer_with_name create_buffer_with_name(size_t buffer_size) {
     
     return buffer_with_name;
 }
-
 
 Number create_number() {
     Number number = {0};
@@ -96,46 +140,6 @@ String load_file_to_string(u8 *file_name) {
     
     return buffer;
 }
-
-typedef struct Tokenizer {
-    char *file_name;
-    u8 buffer_size;
-    s32 column_number;
-    s32 line_number;
-    //stream
-    
-    //char *input;
-    //char at[2];
-    u8 *current_char;
-    
-    bool error;
-} Tokenizer;
-
-typedef enum Token_type {
-    token_type_unkown,
-    
-    token_type_open_brace,
-    token_type_closed_brace,
-    token_type_number,
-    token_type_string,
-    token_type_identifier,
-    
-    token_type_spacing,
-    token_type_eof,
-    token_type_comment,
-    
-    token_type_null_terminator
-} Token_type;
-
-typedef struct Token {
-    string file_name;
-    s32 column_number;
-    s32 line_number;
-    
-    Token_type type;
-    String string;
-    Number num;
-} Token;
 
 bool is_char_new_line(char c) {
     if (c == '\n')
@@ -221,11 +225,6 @@ bool is_char_number(char c) {
     }
     return false;
 }
-
-typedef struct String_iterator {
-    String *string;
-    char *current_char;
-} Strin_iterator;
 
 void create_string_iterator(String *string) {
     String_iterator iterator = {
@@ -485,5 +484,20 @@ bool parse_test_vertices_file(const char *file_name, Buffer_with_name *vertex_bu
         }
     }
 }
+
+void parse_struct(Tokenizer *tokenizer) {
+    Token token = create_token(tokenizer);
+    
+    bool stop_parsing = false;
+    while(!stop_parsing) {
+        
+    }
+    
+}
+
+void parse_introspection(Tokenizer *tokenizer) {
+    require_token(tokenizer, token_type_open_parenthesis);
+}
+
 
 #endif PR_PARSER
