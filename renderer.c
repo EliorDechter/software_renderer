@@ -46,11 +46,15 @@ static void framebuffer_clear_depth(Framebuffer *framebuffer, float depth) {
     }
 }
 
+
+v4 g_default_framebuffer_color;
+int g_default_framebuffer_depth;
+
 static Framebuffer create_framebuffer(Allocator *allocator, u32 width, u32 height) {
     u32 color_buffer_size = width * height * 4 * sizeof(unsigned char);
     u32 depth_buffer_size = (u32)sizeof(float) * width * height;
-    v4 default_color = get_v4(0.9f, 0.9f, 0.9f, 1.0f);
-    float default_depth = 1.0f;
+    //v4 default_color = get_v4(0.9f, 0.9f, 0.9f, 1.0f);
+    //float default_depth = 1.0f; 
     Framebuffer framebuffer = {0};
     
     assert(width > 0 && height > 0);
@@ -62,8 +66,8 @@ static Framebuffer create_framebuffer(Allocator *allocator, u32 width, u32 heigh
     framebuffer.depth_buffer = (float *)allocate_perm_aligned(allocator, depth_buffer_size, 16);
     
     //TODO: memcpy
-    framebuffer_clear_color(&framebuffer, default_color);
-    framebuffer_clear_depth(&framebuffer, default_depth);
+    framebuffer_clear_color(&framebuffer, g_default_framebuffer_color);
+    framebuffer_clear_depth(&framebuffer, g_default_framebuffer_depth);
     
     return framebuffer;
 }
@@ -105,6 +109,8 @@ typedef struct Camera {
     float aspect;
 } Camera;
 
+Camera *g_camera;
+
 static Camera create_camera(v3 pos, v3 target, float aspect) {
     assert(get_v3_length(sub_v3(pos, target)) > EPSILON && aspect);
     
@@ -113,6 +119,10 @@ static Camera create_camera(v3 pos, v3 target, float aspect) {
         .target = target,
         .aspect = aspect
     };
+}
+
+void move_camera(v3 amount) {
+    g_camera->pos =  add_v3(g_camera->pos, amount);
 }
 
 //NOTE: packing gives an improvement of 2x ?!
@@ -154,6 +164,8 @@ static Outcode compute_out_code(v4 v) {
     
     return outcode_inside;
 }
+
+
 
 typedef struct Scene {
     Camera camera;

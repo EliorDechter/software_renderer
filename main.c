@@ -23,7 +23,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h> 
-#include "Parser.c"
+//#include "Parser.c"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wall"
@@ -90,11 +90,6 @@ static Image create_image(Allocator *allocator, u32 width, u32 height, u32 chann
     return image;
 }
 
-static void image_release(Image *image) {
-    free(image->buffer);
-    free(image);
-}
-
 static void blit_image(Framebuffer *framebuffer, Image *image) {
     u32 tile_width = 2;
     u32 tile_height = 2;
@@ -123,35 +118,43 @@ static void blit_image(Framebuffer *framebuffer, Image *image) {
     }
 }
 
-#if 0
-static void handle_key_event(window_t *window, int virtual_key, char pressed) {
-    KeySym *keysyms;
-    KeySym keysym;
-    keycode_t key;
-    int dummy;
+typedef enum Key { key_a, key_d, key_s, key_w, key_escape, key_unknown, key_num } Key;
+typedef enum Button { button_l, button_r } Button;
+
+typedef struct Os_context {
+    Window handle;
+    XImage *ximage;
+    Display *display;
     
-    keysyms = XGetKeyboardMapping(display, virtual_key, 1, &dummy);
-    keysym = keysyms[0];
-    XFree(keysyms);
+    //char keys[KEY_NUM];
+    //char buttons[BUTTON_num];
+    //callbacks
+    void *userdata;
+} Os_context;
+
+static Key handle_key_event(Os_context *os_context, int first_key_code) {
+    int keysyms_per_keycode_return;
+    KeySym *key_sym;
     
-    switch (keysym) {
-        case XK_a:     key = KEY_A;     break;
-        case XK_d:     key = KEY_D;     break;
-        case XK_s:     key = KEY_S;     break;
-        case XK_w:     key = KEY_W;     break;
-        case XK_space: key = KEY_SPACE; break;
-        default:       key = KEY_NUM;   break;
+    key_sym = XGetKeyboardMapping(os_context->display, first_key_code, 1, &keysyms_per_keycode_return);
+    
+    Key key;
+    switch (key_sym[0]) {
+        case XK_a:     key = key_a;     break;
+        case XK_d:     key = key_d;     break;
+        case XK_s:     key = key_s;     break;
+        case XK_w:     key = key_w;     break;
+        case XK_Escape: key = key_escape; break;
+        default:       key = key_unknown;   break;
     }
     
-    if (key < KEY_NUM) {
-        window->keys[key] = pressed;
-        if (window->callbacks.key_callback) {
-            window->callbacks.key_callback(window, key, pressed);
-        }
-    }
+    XFree(key_sym);
+    
+    return key;
 }
 
-static void handle_button_event(window_t *window, int xbutton, char pressed) {
+#if 0
+static void handle_mouse_button_event(window_t *window, int xbutton, char pressed) {
     if (xbutton == Button1 || xbutton == Button3) {         /* mouse button */
         button_t button = xbutton == Button1 ? BUTTON_L : BUTTON_R;
         window->buttons[button] = pressed;
@@ -184,45 +187,48 @@ static void handle_client_event(Display *display, XClientMessageEvent *event) {
     }
 }
 
-void process_event(Display *display, XEvent *event) {
-    //Window handle;
-    //window_t *window;
-    //int error;
-    
-    //handle = event->xany.window;
-    //error = XFindContext(display, handle, g_context, (XPointer*)&window);
-    /*
-    if (error != 0) {
-        return;
-    }
-    */
-    
-    if (event->type == ClientMessage) {
-        handle_client_event(display, &event->xclient);
-    } 
-#if 0
-    else if (event->type == KeyPress) {
-        handle_key_event(window, event->xkey.keycode, 1);
-    } else if (event->type == KeyRelease) {
-        handle_key_event(window, event->xkey.keycode, 0);
-    } else if (event->type == ButtonPress) {
-        handle_button_event(window, event->xbutton.button, 1);
-    } else if (event->type == ButtonRelease) {
-        handle_button_event(window, event->xbutton.button, 0);
-    }
-#endif
-}
-
-
-void input_poll_events(Display *display) {
-    int count = XPending(display);
-    while (count > 0) {
+void handle_input(Os_context *os_context) {
+    for (int i = XPending(os_context->display); i > 0;  --i) {
         XEvent event;
-        XNextEvent(display, &event);
-        process_event(display, &event);
-        count -= 1;
+        XNextEvent(os_context->display, &event);
+        
+        if (event.type == ClientMessage) {
+            handle_client_event(os_context->display, &event.xclient);
+        } 
+        else if (event.type == KeyPress) {
+            Key key = handle_key_event(os_context, event.xkey.keycode);
+            if (key == key_escape) {
+                g_window_should_close = true;
+            }
+            if (key == key_a) {
+                move_camera(get_v3(-0.1, 0, 0));
+            }
+            else if (key == key_d) {
+                move_camera(get_v3(0.1, 0, 0));
+            }
+            else if (key == key_w) {
+                move_camera(get_v3(0, 0.1, 0));
+            }
+            else if (key == key_s) {
+                move_camera(get_v3(0, -0.1, 0));
+            }
+            else if (key == key_unknown) {
+                //do nothing
+            }
+        }
+        else if (event.type == KeyRelease) {
+            handle_key_event(os_context, event.xkey.keycode);
+        }
+#if 0
+        else if (event->type == ButtonPress) {
+            handle_button_event(window, event->xbutton.button, 1);
+        } else if (event->type == ButtonRelease) {
+            handle_button_event(window, event->xbutton.button, 0);
+        }
+#endif
     }
-    XFlush(display);
+    
+    XFlush(os_context->display);
 }
 
 static double get_time() {
@@ -235,13 +241,11 @@ static double get_time() {
 FILE *g_output_file;
 
 typedef struct Renderer_settings {
-    
     //debug stuff
     bool should_process_vertices;
     bool run_once;
     enum vertices_source { vertices_source_model, vertices_source_simple_image } vertices_source;
 } Renderer_settings;
-
 
 typedef struct File {
     const char *name;
@@ -263,7 +267,15 @@ bool check_and_change_modification_time_of_file(File *file) {
     return false;
 }
 
+void clear_framebuffer(Framebuffer *framebuffer) {
+    framebuffer_clear_color(framebuffer, g_default_framebuffer_color);
+    framebuffer_clear_depth(framebuffer, g_default_framebuffer_depth);
+}
+
 int main() {
+    
+    g_default_framebuffer_color = get_v4(0.9f, 0.9f, 0.9f, 1.0f);
+    g_default_framebuffer_depth = 1.0f; //@TODO: am I sure about this?!
     
     //Buffer test_vertex_buffer = parse_vertices_file("test_vertices.pav");
     File vertices_file = {.name = "test_vertices.pav", .modification_time = 0};
@@ -343,6 +355,7 @@ int main() {
     
     //release scene
     Scene scene = create_scene(SCREEN_WIDTH, SCREEN_HEIGHT);
+    g_camera = &scene.camera;
     Framebuffer framebuffer = create_framebuffer(allocator, SCREEN_WIDTH, SCREEN_HEIGHT);
     
     double lowest_fps = 1000.0f;
@@ -358,6 +371,7 @@ int main() {
     Texture texture = load_texture(allocator, "Untitled.png");
 #endif
     
+    
     float average_fps = 0;
     u32 average_fps_counter = 0;
     
@@ -371,7 +385,9 @@ int main() {
         .vertices = model.vertices
     };
     
-    Vertex_buffer cube_vertex_buffer = convert_static_positions_and_uvs_to_vertices(g_cube_face, array_count(g_cube_face) / 5);
+    Texture model_texture = load_texture(allocator, "viking_room.png");
+    
+    Vertex_buffer cube_vertex_buffer = convert_static_positions_and_uvs_to_vertices(g_cube, array_count(g_cube) / 5);
     
     change_object_size(cube_vertex_buffer.vertices, cube_vertex_buffer.num_vertices, 1);
     
@@ -433,18 +449,20 @@ int main() {
             fprintf(stderr, "changed\n");
         }
         
-        Pipeline_data pipeline_data = get_pipeline_data(&cube_vertex_buffer);
+        Pipeline_data pipeline_data = get_pipeline_data(&model_vertex_buffer);
         
         if (renderer_settings.should_process_vertices) {
             process_vertices(main_worker, allocator, &pipeline_data, &scene, framebuffer.width, framebuffer.height);
         }
         
-        rasterize(main_worker, &pipeline_data, &texture, &framebuffer);
+        rasterize(main_worker, &pipeline_data, &model_texture, &framebuffer);
+        
         
         //printf("rasterizer: %lu\n", g_rasterizer_clock_cycles);
         
         //window draw buffer
         blit_image(&framebuffer, &surface);
+        clear_framebuffer(&framebuffer);
         
         //int screen = XDefaultScreen(display);
         GC gc = XDefaultGC(display, screen);
@@ -455,7 +473,11 @@ int main() {
         //more stuff
         
         //input poll events
-        input_poll_events(display);
+        //@TODO: finish filling this struct
+        Os_context os_context = {0};
+        os_context.display = display;
+        
+        handle_input(&os_context);
         //g_window_should_close = true;
         
         second_time = get_time();

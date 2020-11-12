@@ -11,6 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <math.h>
+#include <ctype.h>
 
 typedef uint8_t u8;
 typedef uint16_t u16;
