@@ -29,6 +29,7 @@ typedef __m128i m128i;
 
 #define set_broadcast_m128(a) _mm_set1_ps(a)
 #define compare_greater_than_m128(a, b) _mm_cmpgt_ps(a, b)
+#define compare_less_than_m128(a, b) _mm_cmplt_ps(a, b)
 #define convert_to_m128(a) _mm_cvtepi32_ps(a)
 #define div_m128(a, b) _mm_div_ps(a, b)
 #define load_m128(memory) _mm_load_ps(memory)

@@ -15,9 +15,8 @@ typedef struct Framebuffer{
 } Framebuffer;
 
 const float NEAR = 0.1f;
-const float FAR = 10000;
+const float FAR = 100;
 const float FOVY = TO_RADIANS(60);
-//const v3 UP = {0, 1, 0};
 
 static unsigned char float_to_uchar(float value) {
     return (unsigned char)(value * 255);
@@ -72,14 +71,15 @@ static Framebuffer create_framebuffer(Allocator *allocator, u32 width, u32 heigh
     return framebuffer;
 }
 
-m4 get_m4_look_at(v3 eye, v3 target, v3 up) {
-    v3 z_axis = normalize_v3(sub_v3(eye, target)); //forward
-    v3 x_axis = normalize_v3(cross_v3(up, z_axis)); //left
-    v3 y_axis = cross_v3(z_axis, x_axis); //up
+m4 get_m4_look_at(v3 eye, v3 target, v3 up_dir) {
+    v3 forward = normalize_v3(sub_v3(eye, target)); 
+    v3 left = normalize_v3(cross_v3(up_dir, forward)); 
+    v3 up = cross_v3(forward, left); 
+    
     m4 m = {
-        x_axis.x, y_axis.x, z_axis.x, 0 , 
-        x_axis.y, y_axis.y, z_axis.y, 0 ,
-        x_axis.z, y_axis.z, z_axis.z, 1 ,
+        left.x, up.x, forward.x, 0 , 
+        left.y, up.y, forward.y, 0 ,
+        left.z, up.z, forward.z, 0 ,
         0, 0, 0, 1 
     };
     
@@ -173,7 +173,7 @@ typedef struct Scene {
 
 static Scene create_scene(u32 width, u32 height) {
     Scene scene = {0};
-    scene.camera = create_camera(get_v3(0.0f, 0.0f, 1.5f), get_v3(0, 0, 0), (float)width / height);
+    scene.camera = create_camera(get_v3(0.0f, 0.0f, 0.1f), get_v3(0, 0, 0), (float)width / height);
     
     return scene;
 }
@@ -256,17 +256,20 @@ static void process_vertices(Worker *main_worker, Allocator *allocator, Pipeline
     m4 model_matrix = get_m4_identity();
     m4 view_matrix = get_m4_look_at(scene->camera.pos, scene->camera.target, get_v3(0.0f, 1.0f, 0.0f));
     m4 projection_matrix = get_m4_perspective(FOVY, scene->camera.aspect, NEAR, FAR);
-    m4 mvp = mul_m4_by_m4(mul_m4_by_m4(model_matrix, view_matrix), projection_matrix);
+    m4 mvp = get_m4_identity();
+    //mul_m4_by_m4(mul_m4_by_m4(model_matrix, view_matrix), projection_matrix);
     Vertex_shader_data vertex_shader_data = {0};
     vertex_shader_data.mvp = mvp;
     
 #if 0
     parallel_for(main_worker, 0, vertices_num, 1, vertex_positions, vertices_num, &vertex_shader_data, vertex_shader_function);
 #else
+#if 1
     for (int i = 0; i < vertices_num; ++i) {
-        vertex_positions[i] = mul_m4_by_v4(view_matrix, vertex_positions[i]);
+        v4 result = mul_m4_by_v4(view_matrix, vertex_positions[i]);
+        vertex_positions[i] = result;
     }
-    
+#endif
     for (int i = 0; i < vertices_num; ++i) {
         vertex_positions[i] = mul_m4_by_v4(projection_matrix, vertex_positions[i]);
     }
@@ -319,6 +322,8 @@ typedef struct Binner_data {
     int num_triangles;
 } Binner_data;
 
+#define MAX_NUM_TRIANGLES_PER_BIN 40 //WARNING: this is a bug
+
 static void bin_triangles(int index, void *array, void *data) {
     //TODO: use the abrash algorithm
     Binner_data *binner_data = (Binner_data *)data;
@@ -328,6 +333,7 @@ static void bin_triangles(int index, void *array, void *data) {
         Triangle *triangle = &binner_data->triangles[i];
         Bounding_box triangle_bounding_box = get_2d_bounding_box_from_3_v2(get_v2_from_v4(triangle->positions[0]), get_v2_from_v4(triangle->positions[1]), get_v2_from_v4(triangle->positions[2]));
         if (check_aabb_collision(triangle_bounding_box, bin->bounding_box)) {
+            assert(bin->num_triangles < MAX_NUM_TRIANGLES_PER_BIN);
             bin->triangles[bin->num_triangles++] = *triangle;
         }
     }
@@ -401,10 +407,13 @@ static void rasterize_bins(int index, void *array,  void *data) {
     v2 *uvs = (v2 *)allocate_frame(g_allocator, num_vertices * sizeof(v2));
     for (int i = 0; i < num_triangles; ++i) {
         for (int j = 0; j < 3; ++j) {
-            int index = i * 3 + j;
-            vertices[index] = triangles[i].positions[j];
-            assert(triangles[i].uvs[j].u >= 0 && triangles[i].uvs[j].v >= 0);
-            uvs[index] = triangles[i].uvs[j];
+            int triangle_index = i * 3 + j;
+            //assert(triangles[i].positions[j].z < 1);
+            vertices[triangle_index] = triangles[i].positions[j];
+            
+            assert(triangles[i].uvs[j].u == 0 || triangles[i].uvs[j].u == 1);
+            assert(triangles[i].uvs[j].v == 0 || triangles[i].uvs[j].v == 1);
+            uvs[triangle_index] = triangles[i].uvs[j];
         }
     }
     
@@ -591,7 +600,7 @@ static void rasterize_bins(int index, void *array,  void *data) {
                 //f32 *depth_buffer_pointer =  &framebuffer->depth_buffer[(y * framebuffer->width + x)];
                 f32 *depth_buffer_pointer = framebuffer->depth_buffer + buffer_index;
                 m128 old_depth_value = _mm_load_ps(depth_buffer_pointer);
-                m128 depth_mask = compare_greater_than_m128(z, old_depth_value);
+                m128 depth_mask = compare_less_than_m128(z, old_depth_value);
                 
                 m128 final_mask = _mm_and_ps(_mm_castsi128_ps(mask), depth_mask);
                 m128i final_mask_m128i = _mm_castps_si128(final_mask);
@@ -616,12 +625,13 @@ static void rasterize_bins(int index, void *array,  void *data) {
     }
 }
 
-#define MAX_NUM_TRIANGLES_PER_BIN 10
 
 static void rasterize(Worker *main_worker, Pipeline_data *pipeline_data, Texture *texture, Framebuffer *out_framebuffer) {
     assert(pipeline_data->num_vertices != 0);
     assert(pipeline_data->positions);
     assert(pipeline_data->uvs);
+    
+    
     
     //bin triangles
     u32 num_triangles = pipeline_data->num_vertices / 3;
@@ -671,6 +681,17 @@ static void rasterize(Worker *main_worker, Pipeline_data *pipeline_data, Texture
     bin_rasterization_data.framebuffer = out_framebuffer;
     
     //TODO: test what happens when end_index < array_count
+    for (int bin_index = 0; bin_index < num_bins; ++bin_index) {
+        int num_triangles = bins[bin_index].num_triangles;
+        for (int triangle_index = 0; triangle_index < num_triangles; ++triangle_index) {
+            Triangle triangle = bins[bin_index].triangles[triangle_index];
+            for (int uv_index = 0; uv_index < 3; ++uv_index) {
+                assert(triangle.uvs[uv_index].u == 0 || triangle.uvs[uv_index].u == 1);
+                assert(triangle.uvs[uv_index].v == 0 || triangle.uvs[uv_index].v == 1);
+            }
+        }
+    }
+    
     parallel_for(main_worker, 0, num_bins, 1, bins, num_bins, &bin_rasterization_data, rasterize_bins);
     
 }

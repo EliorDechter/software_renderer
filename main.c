@@ -8,6 +8,7 @@
 //-put a cap on number of jobs & finish with the multithreading code already
 //-make sure each job operates on a single cache line - which is not the case right now
 //-idea: nested iterator
+//-should the buffer default depth be 1? what's the difference between 32 bit and 24 bit depth buffer?
 
 #include <stdio.h>
 #include <assert.h>
@@ -37,7 +38,6 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 
 #pragma GCC diagnostic pop
-
 
 #include "common.c"
 #include "math.c"
@@ -272,10 +272,29 @@ void clear_framebuffer(Framebuffer *framebuffer) {
     framebuffer_clear_depth(framebuffer, g_default_framebuffer_depth);
 }
 
+typedef struct Render_result {
+    Framebuffer framebuffer;
+} Render_result;
+
+Render_result render(const Vertex_buffer *vertex_buffer, const Renderer_settings *renderer_settings, Allocator *allocator, Worker *main_worker, Framebuffer *framebuffer, Scene *scene, Texture *texture) {
+    Pipeline_data pipeline_data = get_pipeline_data(vertex_buffer);
+    
+    if (renderer_settings->should_process_vertices) {
+        process_vertices(main_worker, allocator, &pipeline_data, scene, framebuffer->width, framebuffer->height);
+    }
+    
+    rasterize(main_worker, &pipeline_data, texture, framebuffer);
+    
+    Render_result render_result = {0};
+    
+    return render_result;
+    
+}
+
 int main() {
     
     g_default_framebuffer_color = get_v4(0.9f, 0.9f, 0.9f, 1.0f);
-    g_default_framebuffer_depth = 1.0f; //@TODO: am I sure about this?!
+    g_default_framebuffer_depth = 1.0f; 
     
     //Buffer test_vertex_buffer = parse_vertices_file("test_vertices.pav");
     File vertices_file = {.name = "test_vertices.pav", .modification_time = 0};
@@ -385,53 +404,6 @@ int main() {
         .vertices = model.vertices
     };
     
-    Texture model_texture = load_texture(allocator, "viking_room.png");
-    
-    Vertex_buffer cube_vertex_buffer = convert_static_positions_and_uvs_to_vertices(g_cube, array_count(g_cube) / 5);
-    
-    change_object_size(cube_vertex_buffer.vertices, cube_vertex_buffer.num_vertices, 1);
-    
-#if 0
-    const int stride = 8;
-    //v4 vertex_positions[6];
-    //v4 vertex_colors[6];
-    v4 *vertex_positions = (v4 *)allocate_frame(allocator, sizeof(v4) * vertices_num);
-    v4 *vertex_colors = (v4 *)allocate_frame(allocator, sizeof(v4) * vertices_num);
-    v2 *vertex_uvs = (v2 *)allocate_frame(allocator, sizeof(v2) * vertices_num);
-    
-    u32 position_index = 0;
-    u32 color_index = 3;
-    u32 uv_index = 6;
-    
-    for (int i = 0; i  < vertices_num; ++i) {
-        vertex_positions[i] = 
-            get_v4(input_vertices[position_index], input_vertices[position_index + 1], input_vertices[position_index + 2], 1.0f),
-        
-        vertex_colors[i] = get_v4(input_vertices[color_index], input_vertices[color_index + 1], input_vertices[color_index + 2], 1.0f);
-        
-        vertex_uvs[i] = get_v2(input_vertices[uv_index], input_vertices[uv_index + 1]);
-        
-        position_index += stride;
-        color_index += stride;
-        uv_index += stride;
-    }
-#endif
-    
-    float float_temp_vertices[] = {
-#if 1
-        255, 0, 50,    1, 0,
-        0, 0, 50,      0, 0,
-        0, 255, 50,    0, 1,
-#endif
-#if 0
-        10, 255, 15,    0, 1,
-        255, 255, 15,  1, 1,
-        255, 10, 15,    1, 0
-#endif
-    };
-    
-    Vertex_buffer temp_vertex_buffer = convert_static_positions_and_uvs_to_vertices(float_temp_vertices, array_count(float_temp_vertices) / 5);
-    
     Renderer_settings renderer_settings = {
         .should_process_vertices = true,
         .run_once = false
@@ -439,8 +411,15 @@ int main() {
     
     u32 frame_number = 0;
     
-    begin_frame_allocation(allocator);
+    Texture model_texture = load_texture(allocator, "viking_room.png");
     
+    Vertex_buffer cube_vertex_buffer = convert_static_positions_and_uvs_to_vertices(g_cube, array_count(g_cube) / 5);
+    
+    change_object_size(cube_vertex_buffer.vertices, cube_vertex_buffer.num_vertices, 1);
+    
+    Vertex_buffer cube_face_vertex_buffer = convert_static_positions_and_uvs_to_vertices(g_small_square, array_count(g_small_square) / 5);
+    
+    begin_frame_allocation(allocator);
     while(!g_window_should_close) {
         frame_number++;
         first_time = get_time();
@@ -449,14 +428,7 @@ int main() {
             fprintf(stderr, "changed\n");
         }
         
-        Pipeline_data pipeline_data = get_pipeline_data(&model_vertex_buffer);
-        
-        if (renderer_settings.should_process_vertices) {
-            process_vertices(main_worker, allocator, &pipeline_data, &scene, framebuffer.width, framebuffer.height);
-        }
-        
-        rasterize(main_worker, &pipeline_data, &model_texture, &framebuffer);
-        
+        render(&cube_vertex_buffer, &renderer_settings, allocator, main_worker, &framebuffer, &scene, &texture);
         
         //printf("rasterizer: %lu\n", g_rasterizer_clock_cycles);
         
