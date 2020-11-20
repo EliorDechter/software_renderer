@@ -1,11 +1,19 @@
+#ifndef PR_ASSETS
+#define PR_ASSETS
+
+#define confilicting_tinyob_loader
 #define TINYOBJ_LOADER_C_IMPLEMENTATION
 #include "tinyobj_loader_c.h"
+
+
 #define CGLTF_IMPLEMENTATION
 #include "cgltf.h"
 
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+
+#include "Parser.c"
 
 #if 0
 
@@ -42,6 +50,9 @@ typedef struct Skeleton {
 
 #endif
 
+#define max_num_textures 100
+Texture g_textures[max_num_textures];
+
 static Texture load_texture(Allocator *allocator, const char *path) {
     //TODO: move this into a full formed asset system, with the custom allocator, and consider writing it yourself if necessary
     //consider baking it into a seperate asset file
@@ -56,8 +67,24 @@ static Texture load_texture(Allocator *allocator, const char *path) {
     memcpy(custom_allocator_data, data, image_size);
     stbi_image_free(data);
     
-    return (Texture){.width = (u32)width, .height = (u32)height, .channels = (u32)channels, .data = custom_allocator_data};
+    return (Texture){
+        .width = (u32)width,
+        .height = (u32)height,
+        .channels = (u32)channels,
+        .data = custom_allocator_data,
+        .size = width * height * channels
+    };
 }
+
+Texture *get_texture_by_name(const char *name) {
+    //TODO: eventually use hash table
+    for (int i = 0; i < max_num_textures; ++i) {
+        if (is_literal_string_equal(g_textures[i].name.data, name)) {
+            return &g_textures[i];
+        }
+    }
+}
+
 #if 0
 static void load_gltf() {
     cgltf_options options = {0};
@@ -172,3 +199,5 @@ Model load_model_from_obj() {
     
     return model;
 }
+
+#endif

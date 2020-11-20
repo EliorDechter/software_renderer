@@ -3,6 +3,10 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+
+#define USE_SSE 1
+
+#if USE_SSE
 #include <nmmintrin.h>
 #include <immintrin.h>
 
@@ -12,12 +16,10 @@ typedef __m128i m128i;
 #define set_m128i(a0, a1, a2, a3) _mm_set_epi32(a3, a2, a1, a0)
 //#define set_m128i(a0, a1, a2, a3) _mm_set_epi32(a0, a1, a2, a3)
 #define mul_m128i(a, b) _mm_mullo_epi32(a, b)
-#define mul_m128(a, b) _mm_mul_ps(a, b)
 #define add_m128i(a, b) _mm_add_epi32(a, b)
-#define add_m128(a, b) _mm_add_ps(a, b)
 #define or_m128i(a, b) _mm_or_si128(a, b)
 #define and_m128i(a, b) _mm_and_si128(a, b)
-#define set_broadcast_m128i(a) _mm_set1_epi32(a)
+#define broadcast_m128i(a) _mm_set1_epi32(a)
 #define blend_m128i(a, b, conditional) _mm_blendv_epi8(a, b, conditional)
 #define move_m128i(a, b, conditional) _mm_maskmoveu_si128(a, b, conditional)
 #define compare_less_than_m128i(a, b) _mm_cmplt_epi32(a, b)
@@ -27,7 +29,9 @@ typedef __m128i m128i;
 #define sub_m128i(a, b) _mm_sub_epi32(a, b)
 #define cast_to_m128i(a) _mm_castps_si128(a)
 
-#define set_broadcast_m128(a) _mm_set1_ps(a)
+#define mul_m128(a, b) _mm_mul_ps(a, b)
+#define add_m128(a, b) _mm_add_ps(a, b)
+#define broadcast_m128(a) _mm_set1_ps(a)
 #define compare_greater_than_m128(a, b) _mm_cmpgt_ps(a, b)
 #define compare_less_than_m128(a, b) _mm_cmplt_ps(a, b)
 #define convert_to_m128(a) _mm_cvtepi32_ps(a)
@@ -36,6 +40,81 @@ typedef __m128i m128i;
 #define compare_less_than_or_equal_m128(a, b) _mm_cmple_ps(a, b)
 #define and_m128(a, b) _mm_and_ps(a, b)
 #define cast_to_m128(a) _mm_castsi128_ps(a)
+
+#else
+//TODO: finish creating a non-sse path
+typedef struct m128 {
+    float e[4];
+} m128;
+
+typedef struct m128i {
+    int e[4];
+} m128i;
+
+#define mul_m128i(a, b) multiply_4x_int(a, b)
+#define add_m128i(a, b) add_4x_int(a, b)
+#define or_m128i(a, b) or_4x_int(a, b)
+#define and_m128i(a, b) and_4x_int(a, b)
+#define broadcast_m128i(a) broadcast_4x_int(a)
+#define blend_m128i(a, b, conditional) blend_4x_int(a)
+#define move_m128i(a, b, conditional) move_4x_int(a)
+#define compare_less_than_m128i(a, b) compare_less_than_4x_int(a, b)
+#define compare_greater_than_m128i(a, b) compare_greater_than_4x_int(a, b)
+#define compare_equal_m128i(a, b) compare_equal_4x_int(a, b)
+#define convert_to_m128i(a) convert_to_4x_int(a)
+#define sub_m128i(a, b) sub_4x_int(a, b)
+#define cast_to_m128i(a) cast_to_4x_int(a)
+
+#define add_m128(a, b) add_4x_float(a, b)
+#define mul_m128(a, b) multiply_4x_float(a, b)
+#define broadcast_m128(a) 
+#define compare_greater_than_m128(a, b) 
+#define compare_less_than_m128(a, b)
+#define convert_to_m128(a) 
+#define div_m128(a, b) 
+#define load_m128(memory) 
+#define compare_less_than_or_equal_m128(a, b) 
+#define and_m128(a, b) 
+#define cast_to_m128(a) 
+
+m128i multiply_4x_int(m128i a, m128i b) {
+    m128i c = {0};
+    for (int i = 0; i < 4; ++i) {
+        c.e[i] = a.e[i] * b.e[i];
+    }
+    
+    return c;
+}
+
+m128i add_4x_int(m128i a, m128i b) {
+    m128i c = {0};
+    for (int i = 0; i < 4; ++i) {
+        c.e[i] = a.e[i] + b.e[i];
+    }
+    
+    return c;
+}
+
+m128 add_4x_float(m128 a, m128 b) {
+    m128 c = {0};
+    for (int i = 0; i < 4; ++i) {
+        c.e[i] = a.e[i] + b.e[i];
+    }
+    
+    return c;
+}
+
+m128 multiply_4x_float(m128 a, m128 b) {
+    m128 c = {0};
+    for (int i = 0; i < 4; ++i) {
+        c.e[i] = a.e[i] * b.e[i];
+    }
+    
+    return c;
+}
+
+#endif
+
 
 //TODO: fma + avx2 instructions
 
@@ -248,15 +327,15 @@ v4 get_v4_from_v3(v3 v, f32 last_element) {
 }
 
 typedef struct Bounding_box {
-    int x0, x1, y0, y1;
+    int min_x,min_y, max_x, max_y;
 } Bounding_box;
 
-Bounding_box get_2d_bounding_box_from_4_coords(int x0, int y0, int x1, int y1) {
+Bounding_box get_2d_bounding_box_from_4_coords(int min_x, int min_y, int max_x, int max_y) {
     Bounding_box bounding_box = {
-        .x0 = x0,
-        .y0 = y0, 
-        .x1 = x1,
-        .y1 = y1
+        .min_x = min_x,
+        .min_y = min_y, 
+        .max_x = max_x,
+        .max_y = max_y
     };
     
     return bounding_box;
@@ -264,16 +343,29 @@ Bounding_box get_2d_bounding_box_from_4_coords(int x0, int y0, int x1, int y1) {
 
 Bounding_box get_2d_bounding_box_from_3_v2(v2 a, v2 b, v2 c) {
     Bounding_box bounding_box;
-    bounding_box.x0 = min_s32(min_s32(a.x, b.x), c.x);
-    bounding_box.y0 = min_s32(min_s32(a.y, b.y), c.y);
-    bounding_box.x1 = max_s32(max_s32(a.x, b.x), c.x);
-    bounding_box.y1 = max_s32(max_s32(a.y, b.y), c.y);
+    bounding_box.min_x = min_s32(min_s32(a.x, b.x), c.x);
+    bounding_box.min_y = min_s32(min_s32(a.y, b.y), c.y);
+    bounding_box.max_x = max_s32(max_s32(a.x, b.x), c.x);
+    bounding_box.max_y = max_s32(max_s32(a.y, b.y), c.y);
     
     return bounding_box;
 }
 
-bool check_aabb_collision(Bounding_box box0, Bounding_box box1) {
-    int width_sum = (box0.x1 - box0.x0) + (box1.x1  - box1.x0);
-    int height_sum = (box0.y1 - box0.y0) + (box1.y1  - box1.y0);
-    return (abs(box0.x0 - box1.x0) < width_sum) && (abs(box0.y0 - box1.y0) < height_sum);
+bool check_aabb_collision(Bounding_box a, Bounding_box b) {
+    return (a.max_x - a.min_x >= b.min_x) && (b.max_x - b.min_x >= a.min_x) && (a.max_y - a.min_y >= b.min_y) && (b.max_y - b.min_y >= a.min_y);
+}
+
+typedef struct Rect {
+    float x_min, y_min, x_max, y_max;
+} Rect;
+
+Rect create_rect(float x_min, float y_min, float x_max, float y_max) {
+    Rect rect = { .x_min = x_min, .y_min = y_min, .x_max = x_max, .y_max = y_max };
+    return rect;
+}
+
+bool is_point_inside_rect(Rect rect, v2 point) {
+    if (point.x >= rect.x_min && point.x <= rect.x_max  && point.y >= rect.y_min && point.y <= rect.y_max)
+        return true;
+    return false;
 }

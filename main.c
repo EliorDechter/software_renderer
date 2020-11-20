@@ -9,6 +9,14 @@
 //-make sure each job operates on a single cache line - which is not the case right now
 //-idea: nested iterator
 //-should the buffer default depth be 1? what's the difference between 32 bit and 24 bit depth buffer?
+//-frustrum culling before perpsective divide
+//-resize window
+//-handle different resolutions
+
+//RESEARCH_LIST
+//-use optional type?
+//-is bounds checking expensive?
+//-per vognsen's descriptors
 
 #include <stdio.h>
 #include <assert.h>
@@ -24,7 +32,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h> 
-//#include "Parser.c"
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wall"
@@ -43,8 +50,9 @@
 #include "math.c"
 #include "multithreading.c"
 #include "renderer.c"
-#include "assets.c"
+
 #include "global_data.c"
+#include "Parser.c"
 
 #define SAM_HYDE 1
 #define SAM_HYDE_TOP_CORNER 0
@@ -57,12 +65,31 @@ typedef struct Image{
     u8 *buffer;
 } Image;
 
-typedef struct { 
+typedef enum Key { key_a, key_d, key_s, key_w, key_r, key_f, key_escape, key_unknown, key_num } Key;
+typedef enum Mouse_button { left_mouse_button, right_mouse_button, scroll_mouse_up, scroll_mouse_down, num_mouse_buttons } Mouse_button;
+
+typedef struct Input {
+    v2 mouse_pos;
+    Mouse_button mouse_buttons_pressed_status[num_mouse_buttons];
+} Input;
+
+typedef struct Os_context {
+    Window window_handle;
+    XImage *ximage;
+    Display *display;
+    
+    Input input;
+    //char keys[KEY_NUM];
+    //char buttons[BUTTON_num];
+    //callbacks
+    void *userdata;
+} Os_context;
+
+typedef struct Os_window{ 
     Window handle;
     XImage *ximage;
     Image *surface;
     
-    /* common data */
 #if 0
     int should_close;
     char keys[KEY_NUM];
@@ -70,7 +97,7 @@ typedef struct {
     callbacks_t callbacks;
     void *userdata;
 #endif
-} window;
+} Os_window;
 
 static Image create_image(Allocator *allocator, u32 width, u32 height, u32 channels) {
     u32 num_elements = width * height * channels;
@@ -118,20 +145,6 @@ static void blit_image(Framebuffer *framebuffer, Image *image) {
     }
 }
 
-typedef enum Key { key_a, key_d, key_s, key_w, key_escape, key_unknown, key_num } Key;
-typedef enum Button { button_l, button_r } Button;
-
-typedef struct Os_context {
-    Window handle;
-    XImage *ximage;
-    Display *display;
-    
-    //char keys[KEY_NUM];
-    //char buttons[BUTTON_num];
-    //callbacks
-    void *userdata;
-} Os_context;
-
 static Key handle_key_event(Os_context *os_context, int first_key_code) {
     int keysyms_per_keycode_return;
     KeySym *key_sym;
@@ -144,6 +157,8 @@ static Key handle_key_event(Os_context *os_context, int first_key_code) {
         case XK_d:     key = key_d;     break;
         case XK_s:     key = key_s;     break;
         case XK_w:     key = key_w;     break;
+        case XK_r:     key = key_s;     break;
+        case XK_f:     key = key_w;     break;
         case XK_Escape: key = key_escape; break;
         default:       key = key_unknown;   break;
     }
@@ -153,22 +168,28 @@ static Key handle_key_event(Os_context *os_context, int first_key_code) {
     return key;
 }
 
-#if 0
-static void handle_mouse_button_event(window_t *window, int xbutton, char pressed) {
-    if (xbutton == Button1 || xbutton == Button3) {         /* mouse button */
-        button_t button = xbutton == Button1 ? BUTTON_L : BUTTON_R;
-        window->buttons[button] = pressed;
-        if (window->callbacks.button_callback) {
-            window->callbacks.button_callback(window, button, pressed);
-        }
-    } else if (xbutton == Button4 || xbutton == Button5) {  /* mouse wheel */
-        if (window->callbacks.scroll_callback) {
-            float offset = xbutton == Button4 ? 1 : -1;
-            window->callbacks.scroll_callback(window, offset);
-        }
+static Mouse_button handle_mouse_button_event(Os_context *os_context, int xbutton, bool is_pressed) {
+    Mouse_button button;
+    switch(xbutton) {
+        case Button1: button = left_mouse_button; break;
+        case Button2: button = right_mouse_button; break;
+        case Button4: button = scroll_mouse_up; break; //TODO: not sure if button 4 and 5 actually represent mouse up or down
+        case Button5: button = scroll_mouse_down; break;
     }
+    
+    os_context->input.mouse_buttons_pressed_status[button] = is_pressed;
+    
+    return button;
 }
-#endif
+
+static v2 get_mouse_position(Os_context *context) {
+    Window root, child;
+    int root_x, root_y, window_x, window_y;
+    u32 mask;
+    XQueryPointer(context->display, context->window_handle, &root, &child, &root_x, &root_y, &window_x, &window_y, &mask);
+    
+    return get_v2(window_x, window_y);
+}
 
 static void handle_client_event(Display *display, XClientMessageEvent *event) {
     static Atom protocols = None;
@@ -212,6 +233,12 @@ void handle_input(Os_context *os_context) {
             else if (key == key_s) {
                 move_camera(get_v3(0, -0.1, 0));
             }
+            else if (key == key_r) {
+                move_camera(get_v3(0, 0, 0.1));
+            }
+            else if (key == key_f) {
+                move_camera(get_v3(0, 0, -0.1));
+            }
             else if (key == key_unknown) {
                 //do nothing
             }
@@ -219,16 +246,17 @@ void handle_input(Os_context *os_context) {
         else if (event.type == KeyRelease) {
             handle_key_event(os_context, event.xkey.keycode);
         }
-#if 0
-        else if (event->type == ButtonPress) {
-            handle_button_event(window, event->xbutton.button, 1);
-        } else if (event->type == ButtonRelease) {
-            handle_button_event(window, event->xbutton.button, 0);
+        else if (event.type == ButtonPress) {
+            Mouse_button mouse_button = handle_mouse_button_event(os_context, event.xbutton.button, true);
+        } 
+        else if (event.type == ButtonRelease) {
+            Mouse_button mouse_button = handle_mouse_button_event(os_context, event.xbutton.button, false);
         }
-#endif
     }
     
-    XFlush(os_context->display);
+    os_context->input.mouse_pos = get_mouse_position(os_context);
+    
+    XFlush(os_context->display); //NOTE: no idea what this does
 }
 
 static double get_time() {
@@ -276,6 +304,126 @@ typedef struct Render_result {
     Framebuffer framebuffer;
 } Render_result;
 
+
+typedef enum Command { draw_rect_command } Command;
+typedef enum Render_space { world_space, screen_space } Render_space;
+
+typedef struct Draw_rect_command_data {
+    Rect rect;
+    enum { color_rect_type, texture_rect_type } rect_type;
+    union {
+        Texture *texture;
+        v4 color;
+    };
+} Draw_rect_command_data;
+
+typedef struct Command_buffer {
+    Command *commands;
+    int num_commands;
+    int max_num_commands;
+    void *data;
+    void *data_pointer;
+    size_t max_data_size;
+} Command_buffer;
+
+Command_buffer create_command_buffer() {
+    Command_buffer command_buffer = {0};
+    command_buffer.max_num_commands = 100;
+    command_buffer.max_data_size = convert_gibibytes_to_bytes(0.3);
+    command_buffer.commands = (Command *)allocate_perm(g_allocator, sizeof(Command) * command_buffer.max_num_commands);
+    command_buffer.data = (void *)allocate_perm(g_allocator, command_buffer.max_data_size);
+    
+    return command_buffer;
+}
+
+void push_command(Command_buffer *command_buffer, Command command, void *data, size_t data_size) {
+    assert(command_buffer->num_commands + 1 <= command_buffer->max_num_commands);
+    assert(command_buffer->max_data_size + data_size <= command_buffer->max_data_size);
+    command_buffer->commands[command_buffer->num_commands++] = command;
+    memcpy(command_buffer->data_pointer, data, data_size);
+    command_buffer->data_pointer+=data_size;
+}
+
+typedef struct Color_vertex_buffer {
+    int num;
+    int max_num_vertices;
+    Color_vertex *vertices;
+} Color_vertex_buffer;
+
+typedef struct Texture_vertex_buffer {
+    int num;
+    int max_num_vertices;
+    Texture_vertex *vertices;
+} Texture_vertex_buffer;
+
+void triangulate_rect(Rect rect, v3 *positions) {
+    positions[0] = get_v3(rect.x_max, rect.y_min, 0);
+    positions[1] = get_v3(rect.x_min, rect.y_min, 0);
+    positions[2] = get_v3(rect.x_min, rect.y_max, 0);
+    positions[3] = get_v3(rect.x_min, rect.y_max, 0);
+    positions[4] = get_v3(rect.x_max, rect.y_max, 0);
+    positions[5] = get_v3(rect.x_max, rect.y_min, 0);
+}
+
+Color_vertex create_color_vertex(v3 pos, v4 color) {
+    Color_vertex vertex = {
+        .pos = pos,
+        .color = color
+    };
+    
+    return vertex;
+}
+
+Texture_vertex create_texture_vertex(v3 pos, v2 uv) {
+    Texture_vertex vertex = {
+        .pos = pos,
+        .uv = uv
+    };
+    
+    return vertex;
+}
+
+void execute_commands(Command_buffer *command_buffer, Color_vertex_buffer *color_vertex_buffer,
+                      Texture_vertex_buffer *texture_vertex_buffer) {
+    //NOTE: this function will rape the branch predictor (I belive)
+    for (int i = 0; i < command_buffer->num_commands; ++i) {
+        Command command = command_buffer->commands[i];
+        void *current_command_data = command_buffer->data;
+        switch(command) {
+            case draw_rect_command: {
+                Draw_rect_command_data *data = (Draw_rect_command_data *)current_command_data;
+                current_command_data += sizeof(Draw_rect_command_data);
+                v3 positions[6];
+                triangulate_rect(data->rect, positions);
+                if (data->rect_type == color_rect_type) {
+                    color_vertex_buffer->vertices[color_vertex_buffer->num++] = create_color_vertex(positions[0], data->color);
+                    color_vertex_buffer->vertices[color_vertex_buffer->num++] = create_color_vertex(positions[1], data->color);
+                    color_vertex_buffer->vertices[color_vertex_buffer->num++] = create_color_vertex(positions[2], data->color);
+                    color_vertex_buffer->vertices[color_vertex_buffer->num++] = create_color_vertex(positions[3], data->color);
+                    color_vertex_buffer->vertices[color_vertex_buffer->num++] = create_color_vertex(positions[4], data->color);
+                    color_vertex_buffer->vertices[color_vertex_buffer->num++] = create_color_vertex(positions[5], data->color);
+                }
+                else if (data->rect_type == texture_rect_type) {
+                    texture_vertex_buffer->vertices[texture_vertex_buffer->num++] = create_texture_vertex(positions[0], get_v2(1, 0));
+                    texture_vertex_buffer->vertices[texture_vertex_buffer->num++] = create_texture_vertex(positions[1], get_v2(0, 0));
+                    texture_vertex_buffer->vertices[texture_vertex_buffer->num++] = create_texture_vertex(positions[2], get_v2(0, 1));
+                    texture_vertex_buffer->vertices[texture_vertex_buffer->num++] = create_texture_vertex(positions[3], get_v2(0, 1));
+                    texture_vertex_buffer->vertices[texture_vertex_buffer->num++] = create_texture_vertex(positions[4], get_v2(1, 1));
+                    texture_vertex_buffer->vertices[texture_vertex_buffer->num++] = create_texture_vertex(positions[5], get_v2(1, 0));
+                }
+                break;
+            }
+            default: {
+                //none
+                break;
+            }
+        }
+    }
+}
+
+#include "assets.c"
+#include "ui.c" //TODO: move this up when all the dependencies on this file get worked out
+
 Render_result render(const Vertex_buffer *vertex_buffer, const Renderer_settings *renderer_settings, Allocator *allocator, Worker *main_worker, Framebuffer *framebuffer, Scene *scene, Texture *texture) {
     Pipeline_data pipeline_data = get_pipeline_data(vertex_buffer);
     
@@ -292,11 +440,12 @@ Render_result render(const Vertex_buffer *vertex_buffer, const Renderer_settings
 }
 
 int main() {
-    
     g_default_framebuffer_color = get_v4(0.9f, 0.9f, 0.9f, 1.0f);
     g_default_framebuffer_depth = 1.0f; 
     
-    //Buffer test_vertex_buffer = parse_vertices_file("test_vertices.pav");
+    Buffer_with_name loaded_vertex_buffer = {0};
+    //parse_test_vertices_file("test_vertices.pav", &loaded_vertex_buffer);
+    test_parser();
     File vertices_file = {.name = "test_vertices.pav", .modification_time = 0};
     
     g_output_file = fopen("output_file", "w");
@@ -390,7 +539,6 @@ int main() {
     Texture texture = load_texture(allocator, "Untitled.png");
 #endif
     
-    
     float average_fps = 0;
     u32 average_fps_counter = 0;
     
@@ -405,7 +553,7 @@ int main() {
     };
     
     Renderer_settings renderer_settings = {
-        .should_process_vertices = true,
+        .should_process_vertices = false,
         .run_once = false
     };
     
@@ -413,22 +561,40 @@ int main() {
     
     Texture model_texture = load_texture(allocator, "viking_room.png");
     
+#if 0
     Vertex_buffer cube_vertex_buffer = convert_static_positions_and_uvs_to_vertices(g_cube, array_count(g_cube) / 5);
     
     change_object_size(cube_vertex_buffer.vertices, cube_vertex_buffer.num_vertices, 1);
+#endif
     
-    Vertex_buffer cube_face_vertex_buffer = convert_static_positions_and_uvs_to_vertices(g_small_square, array_count(g_small_square) / 5);
+    Vertex_buffer cube_face_vertex_buffer = convert_static_positions_and_uvs_to_vertices(g_cube_face_screen_space, array_count(g_cube_face_screen_space) / 5);
+    
+    Os_context os_context = {0};
+    os_context.display = display;
+    os_context.window_handle = window_handle;
+    
+    Vertex_buffer button_vertex_buffer = convert_static_positions_and_uvs_to_vertices(g_button_vertices, array_count(g_button_vertices) / 5);
+    
+    Command_buffer command_buffer = create_command_buffer();
+    
+    Ui_context ui_context = {0};
+    ui_context.input = &os_context.input;
+    ui_context.command_buffer = &command_buffer;
     
     begin_frame_allocation(allocator);
     while(!g_window_should_close) {
         frame_number++;
         first_time = get_time();
         
+        handle_input(&os_context);
+        
         if (check_and_change_modification_time_of_file(&vertices_file)) {
             fprintf(stderr, "changed\n");
         }
         
-        render(&cube_vertex_buffer, &renderer_settings, allocator, main_worker, &framebuffer, &scene, &texture);
+        //execute_commands(command_buffer, texture_vertex_buffer);
+        
+        render(&cube_face_vertex_buffer, &renderer_settings, allocator, main_worker, &framebuffer, &scene, &texture);
         
         //printf("rasterizer: %lu\n", g_rasterizer_clock_cycles);
         
@@ -442,15 +608,6 @@ int main() {
                   0, 0, 0, 0, surface.width, surface.height);
         XFlush(display);
         
-        //more stuff
-        
-        //input poll events
-        //@TODO: finish filling this struct
-        Os_context os_context = {0};
-        os_context.display = display;
-        
-        handle_input(&os_context);
-        //g_window_should_close = true;
         
         second_time = get_time();
         delta_time = second_time - first_time;

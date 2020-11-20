@@ -2,6 +2,7 @@
 #define PR_PARSER
 
 #include "common.c"
+#include <stdarg.h>
 
 typedef struct String {
     u8 *data;
@@ -24,20 +25,6 @@ typedef struct Buffer_with_name {
     Buffer buffer;
     String name;
 } Buffer_with_name;
-
-typedef struct Tokenizer {
-    char *file_name;
-    u8 buffer_size;
-    s32 column_num;
-    s32 row_num;
-    //stream
-    
-    //char *input;
-    //char at[2];
-    u8 *current_char;
-    
-    bool error;
-} Tokenizer;
 
 typedef enum Token_type {
     token_type_unkown,
@@ -67,11 +54,33 @@ typedef struct Token {
     Number num;
 } Token;
 
+
+typedef struct Tokenizer {
+    char *file_name;
+    u8 buffer_size;
+    s32 column_num;
+    s32 row_num;
+    u8 *current_char;
+    Token token;
+    
+    bool error;
+} Tokenizer;
+
+
 typedef struct String_iterator {
     String *string;
     char *current_char;
 } String_iterator;
 
+void fatal(const char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+    printf("FATAL: ");
+    vprintf(fmt, args);
+    printf("\n");
+    va_end(args);
+    exit(1);
+}
 
 Buffer create_buffer(size_t size) {
     Buffer buffer = {0};
@@ -133,7 +142,6 @@ String create_string_and_fill(const char *c_string) {
 }
 
 
-
 bool is_null_string(String *string) {
     if (string->data == NULL)
         return true;
@@ -181,7 +189,14 @@ String load_file_to_string(u8 *file_name) {
     char *data = malloc(size + 1);
     *data = fread(data, size, 1, file);
     
-    String string = create_string_with_data_pointer(size, data);
+    data[size] = '\0';
+    
+    String string = {
+        .data = data,
+        size = size,
+        .null_terminated_size = size + 1,
+        .max_size = size + 1
+    };
     
     fclose(file);
     
@@ -205,9 +220,8 @@ void append_to_string(String *string, u8 value) {
     string->data[string->size++] = value;
 }
 
-Token create_token(const Tokenizer *tokenizer) {
+Token create_token() {
     Token token = {
-        .file_name = tokenizer->file_name,
         .column_number = 0,
         .line_number = 0,
         .type = token_type_unkown,
@@ -224,13 +238,23 @@ Tokenizer create_tokenizer(String string, char *file_name) {
         .row_num = 0,
         .column_num = 0,
         .current_char = string.data,
+        .token = create_token()
     };
     
     return tokenizer;
 }
 
-void print_parser_error(Tokenizer *tokenizer, char *message) {
-    printf("Error (%d, %d): %s", tokenizer->row_num, tokenizer->column_num, message);
+void print_parser_error(Tokenizer *tokenizer, const char *format, ...) {
+    //TODO: be wary of a possible buffer overflow
+    char string_buffer[1000];
+    sprintf(string_buffer, "Error (%d, %d): ", tokenizer->row_num, tokenizer->column_num);
+    strncat(string_buffer, format, 500);
+    va_list args;
+    va_start(args, format);
+    printf("FATAL: ");
+    vprintf(string_buffer, args);
+    printf("\n");
+    va_end(args);
 }
 
 u8 move_tokenizer_to_next_char(Tokenizer *tokenizer) {
@@ -449,11 +473,10 @@ char *convert_token_type_to_string(Token_type type) {
     }
 }
 
-
 bool require_next_token(Tokenizer *tokenizer, Token_type required_type) {
     Token token = get_next_token(tokenizer);
     if (token.type != required_type) {
-        //print_parser_error(tokenizer, "expected %s", convert_token_type_to_string(required_type));
+        print_parser_error(tokenizer, "expected %s", convert_token_type_to_string(required_type));
         return false;
     }
     
@@ -463,7 +486,7 @@ bool require_next_token(Tokenizer *tokenizer, Token_type required_type) {
 bool require_and_get_next_token(Tokenizer *tokenizer, Token_type required_type, Token *out_token) {
     Token token = get_next_token(tokenizer);
     if (token.type != required_type) {
-        //print_parser_error(tokenizer, "expected %s", convert_token_type_to_string(expected_type));
+        print_parser_error(tokenizer, "expected %s", convert_token_type_to_string(required_type));
         out_token = NULL;
         return false;
     }
@@ -472,14 +495,12 @@ bool require_and_get_next_token(Tokenizer *tokenizer, Token_type required_type, 
     return true;
 }
 
-
-
 bool parse_test_vertices_file(char *file_name, Buffer_with_name *vertex_buffer) {
     String text = load_file_to_string(file_name);
     assert(!is_null_string(&text));
     
     Tokenizer tokenizer = create_tokenizer(text, file_name);
-    Token token = create_token(&tokenizer);
+    Token token = create_token();
     *vertex_buffer = create_buffer_with_name(100);
     
     bool stop_parsing = false;
@@ -517,7 +538,7 @@ bool parse_test_vertices_file(char *file_name, Buffer_with_name *vertex_buffer) 
                     stop_parsing_vertex_buffer = true;
                 }
                 else {
-                    //print_parser_error(tokenizer, "expected %s or %s", convert_token_type_to_string(token_type_comma), convert_token_type_to_string(token_type_closed_brace));
+                    print_parser_error(&tokenizer, "expected %s or %s", convert_token_type_to_string(token_type_comma), convert_token_type_to_string(token_type_closed_brace));
                     return false;
                 }
             }
@@ -529,19 +550,16 @@ bool parse_test_vertices_file(char *file_name, Buffer_with_name *vertex_buffer) 
     }
 }
 
-void parse_struct(Tokenizer *tokenizer) {
-    Token token = create_token(tokenizer);
-    
-    bool stop_parsing = false;
-    while(!stop_parsing) {
-        
-    }
-    
+bool is_literal_string_equal(const char *a, const char *b) {
+    if (strcmp(a, b) == 0)
+        return true;
+    return false;
 }
 
-void parse_introspection(Tokenizer *tokenizer) {
-    //require_token(tokenizer, token_type_open_parenthesis);
+void test_parser() {
+    String text = load_file_to_string("test_vertices.pav");
+    assert(!is_null_string(&text));
+    
 }
-
 
 #endif 
