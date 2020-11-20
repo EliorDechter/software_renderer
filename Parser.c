@@ -54,7 +54,6 @@ typedef struct Token {
     Number num;
 } Token;
 
-
 typedef struct Tokenizer {
     char *file_name;
     u8 buffer_size;
@@ -66,11 +65,13 @@ typedef struct Tokenizer {
     bool error;
 } Tokenizer;
 
-
 typedef struct String_iterator {
     String *string;
     char *current_char;
 } String_iterator;
+
+
+Tokenizer g_tokenizer;
 
 void fatal(const char *fmt, ...) {
     va_list args;
@@ -187,7 +188,7 @@ String load_file_to_string(u8 *file_name) {
     fseek(file, 0, SEEK_SET);
     
     char *data = malloc(size + 1);
-    *data = fread(data, size, 1, file);
+    fread(data, size, 1, file);
     
     data[size] = '\0';
     
@@ -247,11 +248,9 @@ Tokenizer create_tokenizer(String string, char *file_name) {
 void print_parser_error(Tokenizer *tokenizer, const char *format, ...) {
     //TODO: be wary of a possible buffer overflow
     char string_buffer[1000];
-    sprintf(string_buffer, "Error (%d, %d): ", tokenizer->row_num, tokenizer->column_num);
-    strncat(string_buffer, format, 500);
+    printf(string_buffer, "Error (%d, %d): ", tokenizer->row_num, tokenizer->column_num);
     va_list args;
     va_start(args, format);
-    printf("FATAL: ");
     vprintf(string_buffer, args);
     printf("\n");
     va_end(args);
@@ -559,7 +558,8 @@ bool is_literal_string_equal(const char *a, const char *b) {
 void test_parser() {
     String text = load_file_to_string("test_vertices.pav");
     assert(!is_null_string(&text));
-    
+    init_tokenizer();
+    while(
 }
 
 #endif 
